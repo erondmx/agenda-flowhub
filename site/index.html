@@ -203,6 +203,7 @@ try { if (localStorage.getItem('mcal-theme') !== 'light') document.documentEleme
         .cal-fmtedit-badge.manual { background: rgba(52,152,219,.2); color: #64b5f6; }
         .cal-fmtedit-badge.free   { background: rgba(0,0,0,.06); color: #7b80a0; }
         html.dark .cal-fmtedit-badge.free { background: rgba(255,255,255,.06); }
+        .cal-fmtedit-bulk { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
         .cal-fmtedit-list { max-height: 320px; overflow-y: auto; margin-bottom: 16px; }
         .btn-fmtedit-open {
             width: 100%; background: none; border: 1px dashed #3d5a6e;
@@ -677,6 +678,10 @@ html.dark .m-banner { color: #f4d03f; }
                     <p style="font-size:12px;color:#7b80a0;margin:6px 0 12px;line-height:1.5">
                         ✅ Marcado = em uso (bloqueado) &nbsp;·&nbsp; ☐ Desmarcado = livre para agendar
                     </p>
+                    <div class="cal-fmtedit-bulk">
+                        <button type="button" class="cal-btn cal-btn-sm" onclick="cal_setAllVersions(true)">☑ Marcar todas</button>
+                        <button type="button" class="cal-btn cal-btn-sm" onclick="cal_setAllVersions(false)">☐ Desmarcar todas</button>
+                    </div>
                     <div class="cal-fmtedit-list" id="cal-fmtedit-list"></div>
                     <div class="cal-modal-actions">
                         <button class="cal-btn cal-btn-primary" onclick="cal_closeFmtEdit()">← Voltar</button>
@@ -1800,6 +1805,14 @@ html.dark .m-banner { color: #f4d03f; }
             if(it.product===prodName){ const k=`${it.format}|${it.version}`; schedCount[k]=(schedCount[k]||0)+1; }
         }));
 
+        _applyVersionUsed(prodName, key, makeUsed, schedCount);
+        _calSave();
+        _rFmtEdit(); // re-renderiza pra refletir novo estado
+        _calToast(makeUsed?'Versão bloqueada.':'Versão liberada.');
+    }
+    // Regra de bloquear/liberar UMA versão (sem salvar/renderizar) — compartilhada entre o
+    // clique individual e o "Marcar todas / Desmarcar todas".
+    function _applyVersionUsed(prodName, key, makeUsed, schedCount) {
         if(makeUsed){
             // Bloquear: remove passes livres e adiciona ao histórico
             delete calData.freedVersions[prodName][key];
@@ -1812,9 +1825,29 @@ html.dark .m-banner { color: #f4d03f; }
             if(inSched>0) calData.freedVersions[prodName][key]=inSched;
             else delete calData.freedVersions[prodName][key];
         }
+    }
+    // Marcar todas = todas as versões do produto viram "em uso"; Desmarcar todas = todas livres.
+    // Aplica na hora (como cada checkbox) e salva uma vez só.
+    function _setAllVersions(makeUsed) {
+        if(editProdIdx===-1) return;
+        const p = calData.products[editProdIdx]; if(!p) return;
+        const name = p.name;
+        if(!confirm(makeUsed
+            ? `Marcar TODAS as versões de "${name}" como em uso (bloqueadas)?`
+            : `Desmarcar TODAS as versões de "${name}" (deixar livres para agendar)?`)) return;
+        if(!calData.freedVersions) calData.freedVersions={};
+        if(!calData.freedVersions[name]) calData.freedVersions[name]={};
+        if(!calData.usedHistory) calData.usedHistory={};
+        if(!calData.usedHistory[name]) calData.usedHistory[name]=[];
+        const schedCount={};
+        Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{
+            if(it.product===name){ const k=`${it.format}|${it.version}`; schedCount[k]=(schedCount[k]||0)+1; }
+        }));
+        let n=0;
+        (p.formats||[]).forEach(f=>{ for(let v=1; v<=f.versions; v++){ _applyVersionUsed(name, `${f.abbr}|${v}`, makeUsed, schedCount); n++; } });
         _calSave();
-        _rFmtEdit(); // re-renderiza pra refletir novo estado
-        _calToast(makeUsed?'Versão bloqueada.':'Versão liberada.');
+        _rFmtEdit();
+        _calToast(makeUsed ? `${n} versões bloqueadas.` : `${n} versões liberadas.`);
     }
     function _rFmts() {
         const c=$id('cal-formatsContainer');
@@ -2112,6 +2145,7 @@ html.dark .m-banner { color: #f4d03f; }
     window.cal_openFmtEdit        = _openFmtEdit;
     window.cal_closeFmtEdit       = _closeFmtEdit;
     window.cal_toggleVersion      = _toggleVersion;
+    window.cal_setAllVersions     = _setAllVersions;
     window.cal_removeProduct         = _removeProduct;
     window.cal_saveProduct        = _saveProduct;
     window.cal_addTempFormat      = _addFmt;
