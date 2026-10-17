@@ -1,0 +1,2508 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Calendário">
+<meta name="robots" content="noindex,nofollow">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Calendário TikTok</title>
+<script>
+// tema antes da primeira pintura (evita piscar): escuro é o padrão, igual ao Hub
+try { if (localStorage.getItem('mcal-theme') !== 'light') document.documentElement.className = 'dark'; } catch (e) { document.documentElement.className = 'dark'; }
+</script>
+<style>
+/* ── CALENDÁRIO DE POSTAGEM ── */
+        #app {
+            --bg: #f0f2f5; --surface: #ffffff; --surface2: #f0f2f5;
+            --border: #dde1ea; --text: #1a1d2e; --text-muted: #7b80a0;
+            --accent: #4f6ef7; --green: #2ecc71; --red: #e74c3c;
+            --radius: 8px; --radius-sm: 5px;
+            background: var(--bg); color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px;
+            border-radius: 12px; width: 100%; padding-bottom: 20px;
+        }
+        html.dark #app {
+            --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+            --border: #2e3350; --text: #e2e4f0; --text-muted: #7b80a0;
+        }
+        .cal-header {
+            background: var(--surface); border-bottom: 1px solid var(--border);
+            padding: 14px 20px; display: flex; align-items: center; gap: 10px;
+            flex-wrap: wrap; position: sticky; top: 0; z-index: 10; border-radius: 12px 12px 0 0;
+        }
+        .cal-header h1 { font-size: 17px; font-weight: 700; flex: 1; white-space: nowrap; }
+        .cal-header-stats {
+            font-size: 13px; color: var(--text-muted); background: var(--surface2);
+            border: 1px solid var(--border); padding: 5px 12px; border-radius: 20px; white-space: nowrap;
+        }
+        .cal-header-stats span { color: var(--accent); font-weight: 600; }
+        .cal-btn {
+            padding: 7px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+            background: var(--surface2); color: var(--text); cursor: pointer; font-size: 13px;
+            transition: background .15s, border-color .15s; white-space: nowrap; font-family: inherit;
+        }
+        .cal-btn:hover { background: var(--border); border-color: var(--text-muted); }
+        .cal-btn:disabled { opacity: .4; cursor: not-allowed; }
+        .cal-btn-danger:hover { background: #fde8e8; border-color: var(--red); color: var(--red); }
+        html.dark .cal-btn-danger:hover { background: #4a1a1a; }
+        .cal-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .cal-btn-primary:hover { background: #3a5ce0; border-color: #3a5ce0; }
+        .cal-btn-sm { padding: 3px 9px; font-size: 12px; }
+        .cal-grid-wrapper { padding: 16px 20px 20px; overflow-x: auto; }
+        #cal-mainTable { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 640px; }
+        #cal-mainTable thead th {
+            background: var(--surface); color: var(--text-muted); font-size: 12px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: .05em; padding: 10px 14px;
+            border: 1px solid var(--border); text-align: center;
+        }
+        #cal-mainTable thead th:first-child { width: 64px; border-radius: var(--radius) 0 0 0; }
+        #cal-mainTable thead th:last-child  { border-radius: 0 var(--radius) 0 0; }
+        #cal-mainTable tbody tr:last-child td:first-child { border-radius: 0 0 0 var(--radius); }
+        #cal-mainTable tbody tr:last-child td:last-child  { border-radius: 0 0 var(--radius) 0; }
+        .cal-day-label {
+            background: var(--surface); border: 1px solid var(--border); padding: 10px 6px;
+            text-align: center; font-weight: 700; font-size: 12px; color: var(--text-muted); vertical-align: middle;
+        }
+        .cal-cell {
+            background: var(--surface2); border: 1px solid var(--border); padding: 10px;
+            vertical-align: top; min-height: 80px; min-width: 180px; transition: background .15s;
+        }
+        .cal-cell:hover { background: #e4e7ef; }
+        html.dark .cal-cell:hover { background: #262a3e; }
+        .cal-cell-inner { display: flex; flex-direction: column; gap: 6px; min-height: 60px; }
+        .cal-chip {
+            display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,.04);
+            border: 1px solid rgba(0,0,0,.1); border-radius: var(--radius-sm);
+            padding: 7px 10px; transition: background .15s, opacity .15s;
+            cursor: grab;
+        }
+        .cal-chip:hover { background: rgba(0,0,0,.08); }
+        html.dark .cal-chip { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.08); }
+        html.dark .cal-chip:hover { background: rgba(255,255,255,.09); }
+        .cal-chip.posted { opacity: .42; }
+        .cal-chip.cal-dragging { opacity: .25; cursor: grabbing; }
+        .cal-chip.cal-drag-over {
+            border: 2px dashed #3498db !important;
+            background: rgba(52,152,219,.12) !important;
+            opacity: 1 !important;
+        }
+        .cal-cell.cal-drag-over {
+            background: rgba(52,152,219,.14) !important;
+            outline: 2px dashed #3498db;
+            outline-offset: -2px;
+        }
+        .cal-chip.posted .cal-chip-name { text-decoration: line-through; color: var(--text-muted); }
+        .cal-chip-check {
+            width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border);
+            flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: background .15s, border-color .15s;
+        }
+        .cal-chip-check.checked { background: var(--green); border-color: var(--green); }
+        .cal-chip-check.checked::after { content: '✓'; font-size: 12px; color: #fff; line-height: 1; }
+        .cal-chip-badge { font-size: 13px; font-weight: 700; padding: 2px 7px; border-radius: 4px; flex-shrink: 0; color: #fff; }
+        .cal-chip-color { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .cal-chip-name { font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cal-chip-note { font-size: 12px; color: var(--text-muted); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cal-chip-edit {
+            opacity: 0; font-size: 15px; flex-shrink: 0; transition: opacity .15s, color .15s;
+            cursor: pointer; background: none; border: none; color: var(--text-muted); padding: 0; line-height: 1;
+        }
+        .cal-chip:hover .cal-chip-edit { opacity: 1; }
+        .cal-chip-edit:hover { color: var(--accent) !important; }
+        .cal-btn-add-chip {
+            background: none; border: 1px dashed var(--border); color: var(--text-muted);
+            border-radius: var(--radius-sm); padding: 5px 8px; cursor: pointer; font-size: 12px;
+            text-align: left; width: 100%; transition: border-color .15s, color .15s; font-family: inherit;
+        }
+        .cal-btn-add-chip:hover { border-color: var(--accent); color: var(--accent); }
+        .cal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+            z-index: 1000; align-items: center; justify-content: center; padding: 16px;
+        }
+        .cal-overlay.open { display: flex; }
+        .cal-modal {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 24px; width: 100%; max-width: 440px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.5); color: var(--text);
+        }
+        .cal-modal h2 { font-size: 16px; margin-bottom: 20px; color: var(--text); }
+        .cal-form-group { margin-bottom: 14px; }
+        .cal-form-group label {
+            display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px;
+            font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+        }
+        .cal-inp {
+            width: 100%; background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); color: var(--text); padding: 8px 10px;
+            font-size: 14px; font-family: inherit; outline: none; transition: border-color .15s;
+        }
+        .cal-inp:focus { border-color: var(--accent); }
+        .cal-inp-sm { padding: 6px 8px; font-size: 13px; }
+        textarea.cal-inp { resize: vertical; min-height: 60px; }
+        select.cal-inp { cursor: pointer; }
+        .cal-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+        .cal-confirm-modal { max-width: 340px; text-align: center; }
+        .cal-confirm-modal p { color: var(--text-muted); font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
+
+        .cal-resetver-modal { max-width: 420px; width: 95vw; }
+        .cal-resetver-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 12px; }
+        .cal-resetver-actions-top { display: flex; gap: 8px; margin-bottom: 12px; }
+        .cal-resetver-list {
+            max-height: 340px; overflow-y: auto;
+            display: flex; flex-direction: column; gap: 6px;
+            border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+        }
+        .cal-resetver-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 8px 10px; border-radius: 6px;
+            background: rgba(0,0,0,.03); cursor: pointer;
+            transition: background .12s;
+        }
+        .cal-resetver-item:hover { background: rgba(0,0,0,.07); }
+        html.dark .cal-resetver-item { background: rgba(255,255,255,.04); }
+        html.dark .cal-resetver-item:hover { background: rgba(255,255,255,.09); }
+        .cal-resetver-item input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: #e67e22; flex-shrink: 0; }
+        .cal-resetver-item label { flex: 1; font-size: 13px; cursor: pointer; font-weight: 600; color: var(--text); }
+        .cal-resetver-badge {
+            font-size: 11px; padding: 2px 8px; border-radius: 20px;
+            font-weight: 600; flex-shrink: 0;
+        }
+        .cal-resetver-badge.sched  { background: rgba(52,152,219,.25); color: #64b5f6; }
+        .cal-resetver-badge.hist   { background: rgba(155,89,182,.25); color: #ce93d8; }
+        .cal-resetver-badge.freed  { background: rgba(46,204,113,.2);  color: #2ecc71; }
+        .cal-resetver-badge.avail  { background: rgba(0,0,0,.07); color: var(--text-muted); }
+        html.dark .cal-resetver-badge.avail { background: rgba(255,255,255,.08); }
+
+        /* ── EDITAR FORMATOS / VERSÕES ── */
+        .cal-fmtedit-fmt-title {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: .06em; color: #7b80a0; padding: 10px 0 4px;
+        }
+        .cal-fmtedit-ver-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 7px 10px; border-radius: 7px; cursor: pointer;
+            transition: background .15s;
+        }
+        .cal-fmtedit-ver-row:hover { background: rgba(0,0,0,.05); }
+        html.dark .cal-fmtedit-ver-row:hover { background: rgba(255,255,255,.07); }
+        .cal-fmtedit-ver-row input[type=checkbox] { width:15px; height:15px; accent-color:#e67e22; flex-shrink:0; cursor:pointer; }
+        .cal-fmtedit-ver-label { flex:1; font-size:13px; color: var(--text); font-weight:600; }
+        .cal-fmtedit-badge {
+            font-size: 10px; font-weight: 700; border-radius: 4px;
+            padding: 2px 7px; text-transform: uppercase; letter-spacing: .04em;
+        }
+        .cal-fmtedit-badge.sched  { background: rgba(230,126,34,.2); color: #e67e22; }
+        .cal-fmtedit-badge.hist   { background: rgba(155,89,182,.25); color: #ce93d8; }
+        .cal-fmtedit-badge.manual { background: rgba(52,152,219,.2); color: #64b5f6; }
+        .cal-fmtedit-badge.free   { background: rgba(0,0,0,.06); color: #7b80a0; }
+        html.dark .cal-fmtedit-badge.free { background: rgba(255,255,255,.06); }
+        .cal-fmtedit-list { max-height: 320px; overflow-y: auto; margin-bottom: 16px; }
+        .btn-fmtedit-open {
+            width: 100%; background: none; border: 1px dashed #3d5a6e;
+            color: #7b80a0; border-radius: 7px; padding: 9px;
+            font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 18px;
+        }
+        .btn-fmtedit-open:hover { border-color: #3498db; color: #3498db; }
+        .cal-prod-modal { max-width: 520px; }
+        .cal-format-row {
+            display: flex; gap: 8px; align-items: center; padding: 8px;
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); margin-bottom: 8px;
+        }
+        .cal-format-row .fr-name { flex: 2; }
+        .cal-format-row .fr-abbr { width: 56px; text-align: center; text-transform: uppercase; }
+        .cal-format-row .fr-versions { width: 68px; }
+        .cal-prod-list-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+        .cal-prod-list-item:last-child { border-bottom: none; }
+        .cal-prod-list-info { flex: 1; min-width: 0; }
+        .cal-prod-list-name { font-size: 13px; font-weight: 600; }
+        .cal-prod-list-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .cal-esteira-toggle-btn { background: none; border: 1px solid var(--green); color: var(--green); white-space: nowrap; }
+        .cal-esteira-toggle-btn:hover { background: var(--green); color: #fff; }
+        .cal-esteira-toggle-btn.active { background: var(--green); color: #fff; }
+        .cal-esteira-toggle-btn.paused { border-color: #e67e22; color: #e67e22; }
+        .cal-esteira-toggle-btn.paused:hover { background: #e67e22; color: #fff; }
+        .cal-esteira-form-btn { background: none; border: 1px solid var(--green); color: var(--green); }
+        .cal-esteira-form-btn:hover { background: var(--green); color: #fff; }
+        .cal-esteira-form-btn.active { background: var(--green); color: #fff; }
+        .cal-esteira-form-btn.paused { border-color: #e67e22; color: #e67e22; }
+        .cal-esteira-form-btn.paused:hover { background: #e67e22; color: #fff; }
+        .cal-no-versions-msg {
+            color: var(--red); font-size: 13px; background: rgba(231,76,60,.1);
+            border: 1px solid rgba(231,76,60,.3); border-radius: var(--radius-sm); padding: 8px 12px;
+        }
+        .cal-legend { padding: 12px 20px 14px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+        .cal-legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); }
+        .cal-legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .cal-legend-badge { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 3px; color: #fff; }
+        .cal-test-section { padding: 20px 20px 28px; }
+        .cal-test-title { font-size: 1.1em; font-weight: 800; color: var(--text); margin-bottom: 4px; }
+        .cal-test-sub { font-size: 0.8em; color: var(--text-muted); margin-bottom: 14px; }
+        .cal-test-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 12px;
+        }
+        .cal-test-card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+        }
+        .cal-test-card.discarded { opacity: .55; }
+        .cal-test-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .cal-test-name { font-size: 0.9em; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cal-test-count { font-size: 0.82em; font-weight: 800; color: var(--accent); flex-shrink: 0; }
+        .cal-test-count.full { color: var(--red); }
+        .cal-test-bar { height: 6px; border-radius: 4px; background: var(--surface2); overflow: hidden; }
+        .cal-test-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width .2s; }
+        .cal-test-bar-fill.full { background: var(--red); }
+        .cal-test-discard-btn {
+            background: none; border: 1px solid var(--red); color: var(--red);
+            border-radius: 6px; padding: 5px 10px; font-size: 0.78em; font-weight: 700; cursor: pointer;
+        }
+        .cal-test-discard-btn:hover { background: var(--red); color: #fff; }
+        .cal-test-discarded-badge {
+            font-size: 0.78em; font-weight: 700; color: var(--text-muted);
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        }
+        .cal-test-reactivate-btn {
+            background: none; border: none; color: var(--accent); font-size: 0.78em;
+            font-weight: 700; cursor: pointer; text-decoration: underline;
+        }
+        .cal-test-goal-note { font-size: 0.76em; color: var(--text-muted); }
+        .cal-test-decision-row { display: flex; gap: 8px; }
+        .cal-test-validate-btn {
+            flex: 1; background: none; border: 1px solid var(--green); color: var(--green);
+            border-radius: 6px; padding: 5px 8px; font-size: 0.78em; font-weight: 700; cursor: pointer;
+        }
+        .cal-test-validate-btn:hover { background: var(--green); color: #fff; }
+        .cal-test-decision-row .cal-test-discard-btn { flex: 1; }
+        .cal-esteira { margin-top: 16px; }
+        .cal-esteira-toggle {
+            background: none; border: none; color: var(--text-muted); font-size: 0.85em; font-weight: 700;
+            cursor: pointer; padding: 4px 0; font-family: inherit;
+        }
+        .cal-esteira-toggle:hover { color: var(--text); }
+        .cal-esteira-list {
+            margin-top: 8px; border: 1px solid var(--border); border-radius: var(--radius);
+            background: var(--surface); overflow: hidden;
+        }
+        .cal-esteira-item {
+            display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+            border-bottom: 1px solid var(--border); font-size: 0.84em;
+        }
+        .cal-esteira-item:last-child { border-bottom: none; }
+        .cal-esteira-name { flex: 1; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cal-esteira-count { color: var(--text-muted); font-weight: 700; }
+        .cal-esteira-back-btn {
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+            font-size: 1em; padding: 2px 6px; border-radius: 4px;
+        }
+        .cal-esteira-back-btn:hover { background: var(--surface2); color: var(--text); }
+        /* Menu "⋯" genérico — cores fixas (não var()) porque também é usado dentro do
+           Termômetro, que tem seu próprio escopo de cores e não define --surface/--border. */
+        .cal-row-menu-wrap { position: relative; display: inline-block; }
+        .cal-row-menu {
+            display: none; position: absolute; right: 0; top: 100%; margin-top: 4px;
+            background: #fff; border: 1px solid #e0e4ee; border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 200; min-width: 190px; overflow: hidden;
+        }
+        html.dark .cal-row-menu { background: #1e2230; border-color: #2e3350; }
+        .cal-row-menu.open { display: block; }
+        .cal-row-menu button {
+            display: block; width: 100%; text-align: left; padding: 9px 14px; font-size: 0.82em;
+            background: none; border: none; color: #2c3e50; cursor: pointer; white-space: nowrap; font-family: inherit;
+        }
+        html.dark .cal-row-menu button { color: #e2e4f0; }
+        .cal-row-menu button:hover { background: #f7f8fc; }
+        html.dark .cal-row-menu button:hover { background: #262a3e; }
+        .cal-row-menu button.danger { color: #c0392b; }
+        html.dark .cal-row-menu button.danger { color: #ec7063; }
+        .cal-row-menu button.danger:hover { background: #fdeaea; }
+        html.dark .cal-row-menu button.danger:hover { background: #3d1a1a; }
+        .cal-toast {
+            position: fixed; bottom: 24px; right: 24px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 16px;
+            font-size: 13px; z-index: 1100; transform: translateY(80px); opacity: 0;
+            transition: transform .25s, opacity .25s; box-shadow: 0 8px 24px rgba(0,0,0,.4); color: var(--text);
+        }
+        .cal-toast.show { transform: translateY(0); opacity: 1; }
+
+        /* ── CHIP: horário clicável (corrigir sem desmarcar) ── */
+        .cal-chip-time { color: #2ecc71; font-weight: 600; margin-left: 6px; cursor: pointer; }
+        .cal-chip-time:hover { text-decoration: underline; }
+
+        /* ── HISTÓRICO DE POSTAGENS: painel lateral ── */
+        .cal-hist-backdrop {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1200;
+        }
+        /* Editar/Excluir do Histórico precisam ficar ACIMA do drawer, já que abrem por cima dele */
+        #cal-histEditOverlay, #cal-histDeleteOverlay { z-index: 1300; }
+        .cal-hist-backdrop.open { display: block; }
+        .cal-hist-drawer {
+            position: fixed; top: 0; right: 0; height: 100vh; width: 420px; max-width: 92vw;
+            background: var(--surface); border-left: 1px solid var(--border); box-shadow: -8px 0 30px rgba(0,0,0,.3);
+            display: flex; flex-direction: column; color: var(--text);
+            transform: translateX(100%); transition: transform .22s ease;
+        }
+        .cal-hist-backdrop.open .cal-hist-drawer { transform: translateX(0); }
+        .cal-hist-head {
+            padding: 16px 18px; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .cal-hist-head h2 { font-size: 15px; }
+        .cal-hist-close { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; line-height: 1; }
+        .cal-hist-close:hover { color: var(--text); }
+        .cal-hist-filters { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+        .cal-hist-filter-row { display: flex; gap: 8px; }
+        .cal-hist-filter-row select, .cal-hist-filter-row input { flex: 1; min-width: 0; }
+        .cal-hist-count { font-size: 12px; color: var(--text-muted); padding: 10px 18px 0; flex-shrink: 0; }
+        .cal-hist-list { flex: 1; overflow-y: auto; padding: 6px 18px 18px; }
+        .cal-hist-daygroup { margin-top: 14px; }
+        .cal-hist-daylabel { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+        .cal-hist-row { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .cal-hist-row:last-child { border-bottom: none; }
+        .cal-hist-time { color: var(--text-muted); font-variant-numeric: tabular-nums; width: 40px; flex-shrink: 0; }
+        .cal-hist-acc { font-weight: 700; width: 68px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cal-hist-prod { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cal-hist-ver { color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
+        .cal-hist-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; flex-shrink: 0; }
+        .cal-hist-row:hover .cal-hist-actions { opacity: 1; }
+        .cal-hist-actions button { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 13px; padding: 2px; }
+        .cal-hist-actions button:hover { color: var(--accent); }
+        .cal-hist-empty { text-align: center; padding: 40px 10px; color: var(--text-muted); font-size: 13px; }
+        .cal-hist-summary { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+        .cal-hist-summary-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+        .cal-hist-summary-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
+        .cal-hist-summary-row span:last-child { color: var(--text-muted); }
+
+        
+
+/* ══════════ MOBILE — só o que muda em relação ao Calendário do Hub ══════════ */
+html, body { margin: 0; min-height: 100%; -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; background: #f0f2f5; }
+html.dark, html.dark body { background: #0f1117; }
+body { -webkit-tap-highlight-color: transparent; }
+body * { box-sizing: border-box; }
+#app { min-height: 100dvh; border-radius: 0; padding-bottom: calc(72px + env(safe-area-inset-bottom)); font-size: 15px; }
+html.dark #app {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3350; --text: #e2e4f0; --text-muted: #7b80a0;
+}
+/* o CSS do Hub usa "body.dark"; aqui o seletor equivalente é html.dark */
+html.dark .cal-btn-danger:hover { background: #4a1a1a; }
+html.dark .cal-chip { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.08); }
+html.dark .cal-row-menu { background: #1e2230; border-color: #2e3350; }
+html.dark .cal-row-menu button { color: #e2e4f0; }
+html.dark .cal-row-menu button:hover { background: #262a3e; }
+html.dark .cal-row-menu button.danger { color: #ec7063; }
+html.dark .cal-fmtedit-ver-row:hover { background: rgba(255,255,255,.07); }
+html.dark .cal-fmtedit-badge.free { background: rgba(255,255,255,.06); }
+
+.m-top {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.m-title { flex: 1; font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-stats {
+    font-size: 12px; color: var(--text-muted); background: var(--surface2); border: 1px solid var(--border);
+    padding: 5px 10px; border-radius: 999px; white-space: nowrap;
+}
+.m-stats b { color: var(--accent); }
+.m-syncbtn {
+    display: flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text-muted); border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 600; font-family: inherit;
+}
+.m-dot { width: 9px; height: 9px; border-radius: 50%; background: #7b80a0; flex-shrink: 0; }
+.m-dot.synced { background: #2ecc71; } .m-dot.saving { background: #f1c40f; } .m-dot.error { background: #e74c3c; } .m-dot.local { background: #7b80a0; }
+
+.m-banner { margin: 12px 14px 0; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.4;
+    background: rgba(241,196,15,.12); border: 1px solid rgba(241,196,15,.35); color: #d4ac0d; }
+html.dark .m-banner { color: #f4d03f; }
+.m-banner[hidden] { display: none; }
+
+.m-scroll { display: flex; gap: 8px; overflow-x: auto; padding: 12px 14px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.m-scroll::-webkit-scrollbar { display: none; }
+.m-pill {
+    flex: 0 0 auto; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface);
+    color: var(--text-muted); font-weight: 700; font-size: 14px; font-family: inherit; line-height: 1.15; text-align: center;
+}
+.m-pill small { display: block; font-size: 10px; font-weight: 600; opacity: .85; }
+.m-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.m-pill.done:not(.active) { border-color: rgba(46,204,113,.55); color: var(--green); }
+.m-chipfilter { padding: 6px 12px; font-size: 13px; }
+
+.m-view[hidden] { display: none; }
+.m-acc { margin: 12px 14px 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 10px 12px; }
+.m-acc-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; }
+.m-acc-name { font-weight: 800; font-size: 14px; }
+.m-acc-prog { font-size: 12px; color: var(--text-muted); font-weight: 700; }
+.m-acc-prog.all { color: var(--green); }
+.m-acc-list { display: flex; flex-direction: column; gap: 8px; }
+.m-empty { color: var(--text-muted); font-size: 13px; padding: 4px 4px 8px; }
+.m-chip { padding: 8px 8px 8px 6px; cursor: default; min-height: 54px; }
+.m-chip.posted { opacity: .5; }
+.m-check-hit { padding: 8px; margin: -8px 0 -8px -2px; cursor: pointer; flex-shrink: 0; }
+.m-chip .cal-chip-check { width: 28px; height: 28px; }
+.m-chip .cal-chip-check.checked::after { font-size: 16px; }
+.m-chip-main { flex: 1; min-width: 0; }
+.m-chip-line1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.m-chip-name { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-chip.posted .m-chip-name { text-decoration: line-through; color: var(--text-muted); }
+.m-chip-sub { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 3px; font-size: 12px; color: var(--text-muted); }
+.m-chip-note { font-style: italic; }
+.m-chip .cal-chip-time { margin: 0; font-size: 12px; }
+.m-chip .cal-chip-edit { opacity: 1; font-size: 20px; padding: 10px 8px; margin: -6px -2px -6px 0; }
+.m-add { margin-top: 8px; padding: 12px; text-align: center; font-size: 14px; font-weight: 600; }
+.m-legend { margin: 16px 14px 0; color: var(--text-muted); font-size: 12px; }
+.m-legend summary { cursor: pointer; padding: 6px 0; font-weight: 700; }
+.m-legend .cal-legend { padding: 6px 0 0; }
+
+.m-menu { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.m-menu-title { font-size: 12px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin: 12px 2px 0; }
+.m-menu-item {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 15px; font-weight: 600; font-family: inherit;
+}
+.m-menu-item small { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-top: 2px; }
+.m-menu-item.danger { color: var(--red); }
+.m-menu-ico { font-size: 20px; width: 26px; text-align: center; flex-shrink: 0; }
+
+.m-nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; background: var(--surface);
+    border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom);
+}
+.m-nav button {
+    flex: 1; padding: 9px 0 7px; background: none; border: none; color: var(--text-muted); font-size: 11px; font-weight: 700;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; font-family: inherit;
+}
+.m-nav button span { font-size: 21px; line-height: 1; }
+.m-nav button.active { color: var(--accent); }
+
+/* modais do Hub viram "bottom sheets" no celular */
+.cal-overlay { align-items: flex-end; padding: 0; }
+.cal-modal { max-width: none; border-radius: 18px 18px 0 0; max-height: 92dvh; overflow-y: auto; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+.cal-confirm-modal { max-width: none; }
+.cal-prod-modal { max-width: none; }
+.cal-inp { font-size: 16px; padding: 11px 12px; }   /* 16px evita o zoom automático do iOS */
+.cal-btn { padding: 10px 16px; font-size: 14px; }
+.cal-btn-sm { padding: 7px 11px; font-size: 13px; }
+.cal-modal-actions { flex-wrap: wrap; }
+.cal-toast { left: 12px; right: 12px; bottom: calc(80px + env(safe-area-inset-bottom)); text-align: center; z-index: 1500; }
+.cal-hist-drawer { width: 100%; max-width: 100%; height: 100dvh; }
+.cal-hist-head { padding-top: calc(16px + env(safe-area-inset-top)); }
+.cal-hist-actions { opacity: 1; }
+.cal-hist-actions button { font-size: 16px; padding: 6px; }
+.cal-hist-acc { width: 56px; }
+.cal-prod-list-item { flex-wrap: wrap; row-gap: 8px; padding: 12px 0; }
+.cal-prod-list-info { flex: 1 1 calc(100% - 30px); }          /* nome em linha própria; botões descem */
+.cal-prod-list-item .cal-btn-sm { flex: 0 0 auto; }
+.cal-format-row { flex-wrap: wrap; }
+.cal-test-section { padding: 14px; }
+.cal-test-grid { grid-template-columns: 1fr; }
+.cal-test-card { padding: 14px; }
+.cal-test-validate-btn, .cal-test-discard-btn { padding: 10px 8px; font-size: 13px; }
+.cal-esteira-item { padding: 12px 14px; }
+/* o menu "⋯" é absoluto: com overflow:hidden na lista ele era cortado quando a lista tem poucos itens */
+.cal-esteira-list { overflow: visible; }
+.cal-esteira-item:first-child { border-radius: var(--radius) var(--radius) 0 0; }
+.cal-esteira-item:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.cal-esteira-item:only-child { border-radius: var(--radius); }
+.cal-row-menu { min-width: 220px; }
+.cal-row-menu button { padding: 13px 16px; font-size: 14px; }
+.m-two { display: flex; gap: 10px; } .m-two > * { flex: 1; min-width: 0; }
+
+/* pareamento com o Firebase */
+.m-setup { position: fixed; inset: 0; z-index: 2000; background: var(--bg); overflow-y: auto; display: none; padding: calc(20px + env(safe-area-inset-top)) 18px 30px; }
+.m-setup.open { display: block; }
+.m-setup h1 { font-size: 20px; margin: 4px 0 6px; }
+.m-setup p { color: var(--text-muted); font-size: 14px; line-height: 1.5; margin: 0 0 14px; }
+.m-setup textarea.cal-inp { min-height: 150px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+.m-setup .m-err { color: var(--red); font-size: 13px; min-height: 18px; margin: 6px 0 10px; }
+.m-setup .cal-btn { width: 100%; margin-top: 8px; padding: 13px; font-size: 15px; font-weight: 700; }
+.m-kv { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 8px; word-break: break-all; }
+.m-kv b { color: var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+    <header class="m-top">
+        <div class="m-title">📅 Calendário</div>
+        <div class="m-stats" id="m-stats"></div>
+        <button class="m-syncbtn" onclick="mcal_openSync()" aria-label="Sincronização"><span class="m-dot local" id="m-dot"></span><span id="m-synctxt">local</span></button>
+    </header>
+
+    <div class="m-banner" id="m-banner" hidden></div>
+
+    <!-- AGENDA -->
+    <section class="m-view" id="m-view-agenda">
+        <div class="m-scroll" id="m-days"></div>
+        <div class="m-scroll" id="m-accfilter" style="padding-top:4px"></div>
+        <div id="m-daybody"></div>
+        <details class="m-legend"><summary>Legenda de produtos e formatos</summary><div class="cal-legend" id="cal-legendEl"></div></details>
+    </section>
+
+    <!-- TESTE DE PRODUTOS / ESTEIRA -->
+    <section class="m-view" id="m-view-teste" hidden>
+        <div class="cal-test-section">
+            <div class="cal-test-title">🎯 Teste de Produtos</div>
+            <div class="cal-test-sub">Vídeos postados por produto (meta: 10 pra decidir se vale continuar). Fica registrado mesmo depois de "Limpar Semana".</div>
+            <div class="cal-test-grid" id="cal-testGrid"></div>
+            <div class="cal-esteira" id="cal-esteira"></div>
+        </div>
+    </section>
+
+    <!-- MAIS -->
+    <section class="m-view" id="m-view-mais" hidden>
+        <div class="m-menu">
+            <div class="m-menu-title">Cadastros</div>
+            <button class="m-menu-item" onclick="cal_openManageProducts()"><span class="m-menu-ico">📦</span><span>Gerenciar Produtos</span></button>
+            <button class="m-menu-item" onclick="cal_openManageAccounts()"><span class="m-menu-ico">👤</span><span>Gerenciar Contas</span></button>
+            <button class="m-menu-item" onclick="cal_openHistory()"><span class="m-menu-ico">🕘</span><span>Histórico de postagens<small>Registro permanente, com data e horário reais</small></span></button>
+            <div class="m-menu-title">Semana</div>
+            <button class="m-menu-item danger" onclick="cal_openConfirm()"><span class="m-menu-ico">🧹</span><span>Limpar Semana<small>Remove todos os vídeos agendados</small></span></button>
+            <button class="m-menu-item danger" onclick="cal_resetUsedHistory()"><span class="m-menu-ico">🔄</span><span>Resetar Uso dos Produtos<small>Deixa todas as versões disponíveis de novo</small></span></button>
+            <div class="m-menu-title">App</div>
+            <button class="m-menu-item" onclick="mcal_openSync()"><span class="m-menu-ico">☁️</span><span>Sincronização<small id="m-menu-sync">—</small></span></button>
+            <button class="m-menu-item" onclick="cal_exportJSON()"><span class="m-menu-ico">⬇️</span><span>Exportar JSON</span></button>
+            <button class="m-menu-item" onclick="mcal_toggleTheme()"><span class="m-menu-ico">🌓</span><span>Tema claro / escuro</span></button>
+            <button class="m-menu-item" onclick="mcal_forceReload()"><span class="m-menu-ico">♻️</span><span>Atualizar app<small>Recarrega a versão mais nova</small></span></button>
+        </div>
+    </section>
+
+    <nav class="m-nav">
+        <button id="m-nav-agenda" class="active" onclick="mcal_showView('agenda')"><span>📅</span>Agenda</button>
+        <button id="m-nav-teste" onclick="mcal_showView('teste')"><span>🎯</span>Teste</button>
+        <button id="m-nav-mais" onclick="mcal_showView('mais')"><span>⋯</span>Mais</button>
+    </nav>
+
+<!-- VIDEO MODAL -->
+        <div class="cal-overlay" id="cal-videoOverlay" onclick="cal_closeVideoModal(event)">
+            <div class="cal-modal" onclick="event.stopPropagation()">
+                <h2 id="cal-modalTitle">Adicionar Vídeo</h2>
+                <div class="cal-form-group m-two">
+                    <div><label>Dia</label><select class="cal-inp" id="cal-fDay"></select></div>
+                    <div><label>Conta</label><select class="cal-inp" id="cal-fAccount"></select></div>
+                </div>
+                <div class="cal-form-group">
+                    <label>Produto</label>
+                    <select class="cal-inp" id="cal-fProduct" onchange="cal_onProductChange()"></select>
+                </div>
+                <div class="cal-form-group" id="cal-versionGroup">
+                    <label>Versão</label>
+                    <select class="cal-inp" id="cal-fVersionSelect"></select>
+                    <div id="cal-noVersionsMsg" class="cal-no-versions-msg" style="display:none;margin-top:8px">
+                        ⚠️ Todas as versões deste produto já foram usadas.
+                    </div>
+                </div>
+                <div class="cal-form-group">
+                    <label>Observação (opcional)</label>
+                    <textarea class="cal-inp" id="cal-fNote" placeholder="Ex: usar música X, postar às 18h..."></textarea>
+                </div>
+                <div class="cal-modal-actions">
+                    <button class="cal-btn" onclick="cal_closeVideoModal()">Cancelar</button>
+                    <button class="cal-btn cal-btn-danger" id="cal-btnDelete" style="display:none;margin-right:auto" onclick="cal_deleteVideo()">Excluir</button>
+                    <button class="cal-btn cal-btn-primary" id="cal-btnSaveVideo" onclick="cal_saveVideo()">Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- HORÁRIO MODAL -->
+        <div class="cal-overlay" id="cal-timeOverlay" onclick="cal_closeTimeModal(event)">
+            <div class="cal-modal cal-confirm-modal" onclick="event.stopPropagation()">
+                <h2>Horário de postagem</h2>
+                <p style="margin-bottom:16px">Informe o horário em que o vídeo foi postado:</p>
+                <input type="time" class="cal-inp" id="cal-fPostedTime" style="text-align:center;font-size:22px;padding:10px;letter-spacing:2px">
+                <div class="cal-modal-actions" style="justify-content:center;margin-top:16px">
+                    <button class="cal-btn" onclick="cal_closeTimeModal()">Cancelar</button>
+                    <button class="cal-btn cal-btn-primary" onclick="cal_confirmPosted()">Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONFIRM LIMPAR -->
+        <div class="cal-overlay" id="cal-confirmOverlay" onclick="cal_closeConfirm(event)">
+            <div class="cal-modal cal-confirm-modal" onclick="event.stopPropagation()">
+                <h2>Limpar Semana</h2>
+                <p>Isso vai remover <strong>todos</strong> os vídeos agendados. Esta ação não pode ser desfeita.</p>
+                <div class="cal-modal-actions" style="justify-content:center">
+                    <button class="cal-btn" onclick="cal_closeConfirm()">Cancelar</button>
+                    <button class="cal-btn cal-btn-danger" onclick="cal_clearWeek()">Limpar Tudo</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PRODUTOS MODAL -->
+        <div class="cal-overlay" id="cal-productsOverlay" onclick="cal_closeProdModal(event)">
+            <div class="cal-modal cal-prod-modal" onclick="event.stopPropagation()">
+                <div id="cal-prodListView">
+                    <h2>Gerenciar Produtos</h2>
+                    <div id="cal-productsList" style="margin-bottom:16px;max-height:320px;overflow-y:auto"></div>
+                    <div style="display:flex;gap:8px;justify-content:space-between">
+                        <button class="cal-btn cal-btn-primary" onclick="cal_openProductForm(-1)">+ Adicionar Produto</button>
+                        <button class="cal-btn cal-btn-primary" onclick="cal_closeProdModal()">Fechar</button>
+                    </div>
+                </div>
+                <div id="cal-prodFormView" style="display:none">
+                    <h2 id="cal-prodFormTitle">Novo Produto</h2>
+                    <div class="cal-form-group">
+                        <label>Nome do Produto</label>
+                        <input type="text" class="cal-inp" id="cal-fpName" placeholder="ex: Blusa">
+                    </div>
+                    <div class="cal-form-group" id="cal-fp-esteira-group" style="display:none">
+                        <label>Status Operacional</label>
+                        <button type="button" class="cal-btn cal-esteira-form-btn" id="cal-fp-esteira-btn" onclick="cal_toggleEsteiraFromForm()" style="width:100%"></button>
+                    </div>
+                    <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
+                        <label style="font-size:12px;color:#7b80a0;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex:1">Formatos</label>
+                        <span style="font-size:11px;color:#7b80a0">Nome · Abrev · Versões</span>
+                    </div>
+                    <div id="cal-formatsContainer" style="margin-bottom:10px;max-height:240px;overflow-y:auto"></div>
+                    <button class="cal-btn" style="width:100%;margin-bottom:10px" onclick="cal_addTempFormat()">+ Adicionar Formato</button>
+                    <button class="btn-fmtedit-open" id="cal-btn-fmtedit" style="display:none" onclick="cal_openFmtEdit()">🔧 Editar uso das versões</button>
+                    <div class="cal-modal-actions">
+                        <button class="cal-btn" onclick="cal_closeProductForm()">Cancelar</button>
+                        <button class="cal-btn cal-btn-primary" onclick="cal_saveProduct()">Salvar Produto</button>
+                    </div>
+                </div>
+
+                <!-- VIEW: EDITAR VERSÕES -->
+                <div id="cal-fmtEditView" style="display:none">
+                    <h2 id="cal-fmtedit-title">Versões do produto</h2>
+                    <p style="font-size:12px;color:#7b80a0;margin:6px 0 12px;line-height:1.5">
+                        ✅ Marcado = em uso (bloqueado) &nbsp;·&nbsp; ☐ Desmarcado = livre para agendar
+                    </p>
+                    <div class="cal-fmtedit-list" id="cal-fmtedit-list"></div>
+                    <div class="cal-modal-actions">
+                        <button class="cal-btn cal-btn-primary" onclick="cal_closeFmtEdit()">← Voltar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTAS MODAL -->
+        <div class="cal-overlay" id="cal-accountsOverlay" onclick="cal_closeAccModal(event)">
+            <div class="cal-modal" onclick="event.stopPropagation()">
+                <h2>Gerenciar Contas</h2>
+                <div id="cal-accountsList" style="margin-bottom:14px;max-height:300px;overflow-y:auto"></div>
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                    <input type="text" class="cal-inp" id="cal-newAccInput" placeholder="Nome da conta" style="flex:1">
+                    <button class="cal-btn cal-btn-primary" onclick="cal_addAccountFromManager()">Adicionar</button>
+                </div>
+                <p style="font-size:11px;color:#7b80a0;margin-bottom:16px">Mínimo de 1 conta.</p>
+                <div class="cal-modal-actions">
+                    <button class="cal-btn cal-btn-primary" onclick="cal_closeAccModal()">Fechar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- HISTÓRICO DE POSTAGENS: DRAWER -->
+        <div class="cal-hist-backdrop" id="cal-histBackdrop" onclick="cal_histBackdropClick(event)">
+            <div class="cal-hist-drawer" onclick="event.stopPropagation()">
+                <div class="cal-hist-head">
+                    <h2>🕘 Histórico de Postagens</h2>
+                    <button class="cal-hist-close" onclick="cal_closeHistory()">✕</button>
+                </div>
+                <div class="cal-hist-filters">
+                    <div class="cal-hist-filter-row">
+                        <select class="cal-inp" id="cal-hist-fAccount" onchange="cal_histRender()"></select>
+                        <select class="cal-inp" id="cal-hist-fProduct" onchange="cal_histRender()"></select>
+                    </div>
+                    <div class="cal-hist-filter-row">
+                        <select class="cal-inp" id="cal-hist-fPeriod" onchange="cal_histRender()">
+                            <option value="today">Hoje</option>
+                            <option value="2d">Últimos 2 dias</option>
+                            <option value="7d">Últimos 7 dias</option>
+                            <option value="30d">Últimos 30 dias</option>
+                            <option value="all" selected>Todos</option>
+                        </select>
+                    </div>
+                    <div class="cal-hist-filter-row">
+                        <input type="text" class="cal-inp" id="cal-hist-fSearch" placeholder="Buscar produto..." oninput="cal_histRender()">
+                    </div>
+                </div>
+                <div class="cal-hist-count" id="cal-hist-count"></div>
+                <div class="cal-hist-list" id="cal-hist-list"></div>
+            </div>
+        </div>
+
+        <!-- HISTÓRICO: EDITAR POSTAGEM -->
+        <div class="cal-overlay" id="cal-histEditOverlay" onclick="cal_histCloseEdit(event)">
+            <div class="cal-modal" onclick="event.stopPropagation()">
+                <h2>Editar Postagem</h2>
+                <div class="cal-form-group">
+                    <label>Conta</label>
+                    <select class="cal-inp" id="cal-hist-eAccount"></select>
+                </div>
+                <div class="cal-form-group">
+                    <label>Produto</label>
+                    <select class="cal-inp" id="cal-hist-eProduct"></select>
+                </div>
+                <div class="cal-form-group">
+                    <label>Data</label>
+                    <input type="date" class="cal-inp" id="cal-hist-eDate">
+                </div>
+                <div class="cal-form-group">
+                    <label>Horário</label>
+                    <input type="time" class="cal-inp" id="cal-hist-eTime">
+                </div>
+                <div class="cal-modal-actions">
+                    <button class="cal-btn" onclick="cal_histCloseEdit()">Cancelar</button>
+                    <button class="cal-btn cal-btn-primary" onclick="cal_histSaveEdit()">Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- HISTÓRICO: CONFIRMAR EXCLUSÃO -->
+        <div class="cal-overlay" id="cal-histDeleteOverlay" onclick="cal_histCloseDeleteConfirm(event)">
+            <div class="cal-modal cal-confirm-modal" onclick="event.stopPropagation()">
+                <h2>Excluir postagem</h2>
+                <p>Excluir esta postagem do histórico? Esta ação não pode ser desfeita.</p>
+                <div class="cal-modal-actions" style="justify-content:center">
+                    <button class="cal-btn" onclick="cal_histCloseDeleteConfirm()">Cancelar</button>
+                    <button class="cal-btn cal-btn-danger" onclick="cal_histConfirmDelete()">Excluir</button>
+                </div>
+            </div>
+        </div>
+
+        
+
+    <!-- SINCRONIZAÇÃO -->
+    <div class="cal-overlay" id="m-syncOverlay" onclick="mcal_closeSync(event)">
+        <div class="cal-modal" onclick="event.stopPropagation()">
+            <h2>☁️ Sincronização</h2>
+            <div class="m-kv" id="m-synckv"></div>
+            <div class="cal-modal-actions" style="justify-content:space-between">
+                <button class="cal-btn cal-btn-danger" onclick="mcal_disconnect()">Desconectar</button>
+                <button class="cal-btn" onclick="mcal_reconfigure()">Reconfigurar</button>
+                <button class="cal-btn cal-btn-primary" onclick="mcal_closeSync()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="cal-toast" id="cal-toast"></div>
+
+<!-- PAREAMENTO (dentro de #app: é lá que as variáveis de cor/tema existem) -->
+<div class="m-setup" id="m-setup">
+    <h1>☁️ Conectar ao Hub</h1>
+    <p>Este app usa a <b>mesma nuvem (Firebase)</b> do Flow Hub, então a agenda é uma só no PC e no celular.<br>
+       <b>Jeito fácil:</b> no Hub, clique em <b>📱 Link do app de celular</b>, abra o link aqui (ou cole ele na caixa abaixo) e pronto.<br>
+       Ou cole o <b>firebaseConfig</b> e informe o nome do perfil.</p>
+    <div class="cal-form-group">
+        <label>Link do Hub ou firebaseConfig</label>
+        <textarea class="cal-inp" id="m-setup-cfg" placeholder='const firebaseConfig = {&#10;  apiKey: "...",&#10;  databaseURL: "https://....firebaseio.com",&#10;  ...&#10;};' autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    </div>
+    <div class="cal-form-group">
+        <label>Perfil (igual ao nome que aparece no Hub)</label>
+        <input type="text" class="cal-inp" id="m-setup-profile" placeholder="ex.: Eron" autocapitalize="off" autocomplete="off" autocorrect="off">
+    </div>
+    <div class="m-err" id="m-setup-err"></div>
+    <button class="cal-btn cal-btn-primary" id="m-setup-go" onclick="mcal_saveSetup()">Conectar</button>
+    <button class="cal-btn" onclick="mcal_useLocal()">Usar só neste aparelho (sem nuvem)</button>
+</div>
+
+</div><!-- /#app -->
+
+<script>
+(function () {
+    const PALETTE    = ['#2980b9','#27ae60','#8e44ad','#c0392b','#d35400','#16a085','#2c3e50','#e67e22'];
+    const FMT_COLORS = ['#f39c12','#9b59b6','#1abc9c','#3498db','#e74c3c','#f1c40f'];
+    const DEF_FMTS   = [{ name:'Fábrica', abbr:'F', versions:15 }, { name:'Loja', abbr:'L', versions:15 }];
+    const DEF_DATA   = {
+        products: [
+            { name:'Blusa',          formats: DEF_FMTS.map(f=>({...f})) },
+            { name:'Pote Hermetico', formats: DEF_FMTS.map(f=>({...f})) }
+        ],
+        accounts: ['Conta 1','Conta 2','Conta 3'],
+        productColors: {}, schedule: {}
+    };
+
+    let calData = _calLoad();
+    let editCtx = null, timeCtx = null, tempFmts = [], editProdIdx = -1, toastTmr;
+
+    function $id(id) { return document.getElementById(id); }
+
+    function _calLoad() {
+        try { const r = localStorage.getItem('tiktok-calendario'); if (r) return _calMigrate(JSON.parse(r)); } catch(e){}
+        return _calMigrate(JSON.parse(JSON.stringify(DEF_DATA)));
+    }
+    function _calMigrate(d) {
+        if (!d.products) d.products = [];
+        d.products = d.products.map(p => typeof p === 'string' ? { name:p, formats:DEF_FMTS.map(f=>({...f})) } : p);
+        d.products.forEach(p => { if (!p.id) p.id = _genId(); }); // id estável do produto — sobrevive a renomeações
+        if (!d.productColors) d.productColors = {};
+        if (!d.accounts)      d.accounts = ['Conta 1','Conta 2','Conta 3'];
+        if (!d.schedule)      d.schedule = {};
+        if (!d.usedHistory)    d.usedHistory = {};    // histórico de versões usadas em semanas anteriores
+        if (!d.freedVersions)  d.freedVersions = {}; // passes livres por produto: {produto: {"F|1": 1, "F|2": 2, ...}}
+        if (!d.testCounts)        d.testCounts = {};        // {produto: qtd de vídeos já postados no teste} — sobrevive ao Limpar Semana
+        if (!d.discardedProducts) d.discardedProducts = {}; // {produto: true} — legado, mantido só pra migração; testStatus é a fonte de verdade agora
+        if (!d.postHistory)    d.postHistory = []; // histórico permanente de postagens reais — nunca apagado por Limpar Semana/Resetar
+        if (!d.testStatus) d.testStatus = {}; // {produto: 'testing'|'validated'|'discarded'} — decisão manual, persiste por produto
+        Object.keys(d.discardedProducts).forEach(name => {
+            if (d.discardedProducts[name] && !d.testStatus[name]) d.testStatus[name] = 'discarded';
+        });
+        return d;
+    }
+    function _calSave() {
+        localStorage.setItem('tiktok-calendario', JSON.stringify(calData));
+        if (typeof writeBackup === 'function') writeBackup();
+        if (typeof _calSyncNotify === 'function') _calSyncNotify(); // sync protegido do calendário (PC ↔ celular)
+        if (typeof _scheduleCloudSave === 'function') _scheduleCloudSave();
+    }
+
+    // ── HISTÓRICO DE POSTAGENS — helpers de identidade/data ──
+    function _genId() {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+        return 'ev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+    function _fmtDateISO(d) {
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function _fmtDateBR(iso) {
+        const [y,m,d] = String(iso||'').split('-');
+        return (y&&m&&d) ? `${d}/${m}/${y}` : (iso||'');
+    }
+    function _combineTimestamp(dateStr, timeStr) {
+        const [y,m,day] = String(dateStr||'').split('-').map(Number);
+        if (!y || !m || !day) return Date.now();
+        let hh = 0, mm = 0;
+        if (timeStr && /^\d{2}:\d{2}$/.test(timeStr)) { const parts = timeStr.split(':'); hh = +parts[0]; mm = +parts[1]; }
+        return new Date(y, m - 1, day, hh, mm, 0, 0).getTime();
+    }
+
+    function _cellKey(d, ai) { return `d${d}-c${ai}`; }
+    function _getCell(d, ai) { const k=_cellKey(d,ai); if(!calData.schedule[k]) calData.schedule[k]=[]; return calData.schedule[k]; }
+    function _prodObj(name) { return calData.products.find(p=>p.name===name); }
+    function _prodColor(name) {
+        if (!calData.productColors[name]) {
+            const used = new Set(Object.values(calData.productColors));
+            calData.productColors[name] = PALETTE.find(c=>!used.has(c)) || PALETTE[0];
+        }
+        return calData.productColors[name];
+    }
+    function _fmtColor(product, abbr) {
+        const p = _prodObj(product); if (!p) return '#888';
+        const i = (p.formats||[]).findIndex(f=>f.abbr===abbr); return FMT_COLORS[i>=0?i:0];
+    }
+    function _pool(name) {
+        const p = _prodObj(name); if (!p) return [];
+        const pool = [];
+        (p.formats||[]).forEach(f=>{ for(let v=1;v<=f.versions;v++) pool.push({format:f.abbr,formatName:f.name,version:String(v)}); });
+        return pool;
+    }
+    function _usedKeys(name) {
+        // Usado apenas para estatísticas — sem passes livres
+        const used = new Set();
+        Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{ if(it.product===name) used.add(`${it.format}|${it.version}`); }));
+        if (calData.usedHistory && calData.usedHistory[name]) {
+            calData.usedHistory[name].forEach(k => used.add(k));
+        }
+        return used;
+    }
+    function _avail(name, excl=null) {
+        // Conta quantas vezes cada versão está no schedule
+        const schedCount = {};
+        Object.values(calData.schedule).forEach(arr => arr.forEach(it => {
+            if (it.product === name) {
+                const k = `${it.format}|${it.version}`;
+                schedCount[k] = (schedCount[k] || 0) + 1;
+            }
+        }));
+        // Passes livres por versão (de um Limpar Uso anterior)
+        const freed = (calData.freedVersions && calData.freedVersions[name]) || {};
+        // Histórico de semanas passadas
+        const history = new Set((calData.usedHistory && calData.usedHistory[name]) || []);
+        // Ao editar, a versão atual não conta como bloqueio
+        if (excl) schedCount[excl] = Math.max(0, (schedCount[excl] || 0) - 1);
+
+        return _pool(name).filter(v => {
+            const k = `${v.format}|${v.version}`;
+            const net = (schedCount[k] || 0) - (freed[k] || 0);
+            return net <= 0 && !history.has(k);
+        });
+    }
+    function _productBlocked(name) {
+        // Mesmo critério de "bloqueado" usado no modal Limpar Uso (por versão) —
+        // um produto só está de fato em uso se sobrar alguma versão bloqueada
+        // depois de descontar as versões já liberadas (freedVersions/usedHistory).
+        const schedCount = {};
+        Object.values(calData.schedule).forEach(arr => arr.forEach(it => {
+            if (it.product === name) { const k = `${it.format}|${it.version}`; schedCount[k] = (schedCount[k] || 0) + 1; }
+        }));
+        const freed   = (calData.freedVersions && calData.freedVersions[name]) || {};
+        const history = new Set((calData.usedHistory && calData.usedHistory[name]) || []);
+        return _pool(name).some(v => {
+            const k = `${v.format}|${v.version}`;
+            const net = (schedCount[k] || 0) - (freed[k] || 0);
+            return net > 0 || history.has(k);
+        });
+    }
+    function _e(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    // ── RENDER ──
+    function _calRender() { _mRender(); _rTestGrid(); }
+
+    // ── TESTE DE PRODUTOS ──
+    const TEST_GOAL = 10;
+    function _testStatus(name) { return (calData.testStatus && calData.testStatus[name]) || 'testing'; }
+    function _setTestStatus(name, status) {
+        if (!calData.testStatus) calData.testStatus = {};
+        calData.testStatus[name] = status;
+    }
+    let _esteiraOpen = false;
+    function _rTestGrid() {
+        const el = $id('cal-testGrid');
+        if (!el) return;
+        const counts = calData.testCounts || {};
+        const allNames = Object.keys(counts).filter(n => counts[n] > 0)
+            .sort((a, b) => (counts[b] - counts[a]) || a.localeCompare(b, 'pt-BR', {sensitivity:'base'}));
+        // Produto validado/pausado (decisão já tomada) sai da lista principal, mas continua
+        // existindo — contagem, histórico, cadastro e Calendário seguem intocados, só muda a
+        // área que o mostra.
+        const pendingNames = allNames.filter(n => { const s = _testStatus(n); return s !== 'validated' && s !== 'paused'; });
+        const validatedNames = allNames.filter(n => _testStatus(n) === 'validated');
+        const pausedNames = allNames.filter(n => _testStatus(n) === 'paused');
+
+        if (pendingNames.length === 0 && validatedNames.length === 0) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Nenhum vídeo postado ainda. Marque um vídeo como postado no calendário pra começar a contar aqui.</p>';
+        } else if (pendingNames.length === 0) {
+            el.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Nenhum produto pendente de decisão no momento.</p>';
+        } else {
+            el.innerHTML = pendingNames.map(name => {
+                const count = counts[name];
+                const status = _testStatus(name);
+                const discarded = status === 'discarded';
+                const pct = Math.min(100, Math.round((count / TEST_GOAL) * 100));
+                const full = count >= TEST_GOAL;
+                const over = count - TEST_GOAL;
+                let actionsHtml = '';
+                if (discarded) {
+                    actionsHtml = `<div class="cal-test-discarded-badge"><span>❌ Descartado</span><button class="cal-test-reactivate-btn" onclick="cal_reactivateTest('${_e(name)}')">↺ Reativar</button></div>`;
+                } else {
+                    // Decisão liberada a qualquer momento, não só depois da meta — se já
+                    // deu pra ver que o produto vale a pena (ou não), não precisa esperar.
+                    actionsHtml = `
+                        ${full ? `<div class="cal-test-goal-note">🎯 Meta atingida${over > 0 ? ` · ${over} vídeo${over!==1?'s':''} além da meta` : ''}</div>` : ''}
+                        <div class="cal-test-decision-row">
+                            <button class="cal-test-validate-btn" onclick="cal_validateTest('${_e(name)}')">✅ Adicionar à Esteira</button>
+                            <button class="cal-test-discard-btn" onclick="cal_discardTest('${_e(name)}')">🗑️ Descartar</button>
+                        </div>`;
+                }
+                return `
+                <div class="cal-test-card${discarded ? ' discarded' : ''}">
+                    <div class="cal-test-card-header">
+                        <span class="cal-test-name" title="${_e(name)}">${_e(name)}</span>
+                        <span class="cal-test-count${full ? ' full' : ''}">${count}/${TEST_GOAL}</span>
+                    </div>
+                    <div class="cal-test-bar"><div class="cal-test-bar-fill${full ? ' full' : ''}" style="width:${pct}%"></div></div>
+                    ${actionsHtml}
+                </div>`;
+            }).join('');
+        }
+        _rEsteira(validatedNames, pausedNames, counts);
+    }
+    function _esteiraRowMenu(id, items) {
+        return `<div class="cal-row-menu" id="${id}">${items.map(it => `<button class="${it.danger?'danger':''}" onclick="${it.action}">${it.label}</button>`).join('')}</div>`;
+    }
+    function _esteiraItemHtml(name, count, menuId, menuItems) {
+        return `
+        <div class="cal-esteira-item">
+            <span class="cal-esteira-name" title="${_e(name)}">${_e(name)}</span>
+            <span class="cal-esteira-count">${count}/${TEST_GOAL}</span>
+            <div class="cal-row-menu-wrap">
+                <button class="cal-esteira-back-btn" onclick="cal_toggleRowMenu(event,'${menuId}')" title="Ações">⋯</button>
+                ${_esteiraRowMenu(menuId, menuItems)}
+            </div>
+        </div>`;
+    }
+    function _rEsteira(validatedNames, pausedNames, counts) {
+        const el = $id('cal-esteira');
+        if (!el) return;
+        let h = '';
+        if (validatedNames.length) {
+            h += `<button class="cal-esteira-toggle" onclick="cal_toggleEsteira()">${_esteiraOpen ? '▼' : '▶'} ✅ Esteira Ativa (${validatedNames.length})</button>`;
+            if (_esteiraOpen) {
+                h += '<div class="cal-esteira-list">' + validatedNames.map((name, i) => _esteiraItemHtml(name, counts[name], `cal-menu-va-${i}`, [
+                    { label: '⏸️ Pausar produto', action: `cal_pauseProduct('${_e(name)}')` },
+                    { label: '↩ Voltar para Teste', action: `cal_unvalidateTest('${_e(name)}')` },
+                    { label: '🗑️ Remover da Esteira', action: `cal_removeFromEsteira('${_e(name)}')`, danger: true },
+                ])).join('') + '</div>';
+            }
+        }
+        if (pausedNames.length) {
+            h += `<button class="cal-esteira-toggle" onclick="cal_togglePausedSection()">${_pausedOpen ? '▼' : '▶'} ⏸️ Produtos Pausados (${pausedNames.length})</button>`;
+            if (_pausedOpen) {
+                h += '<div class="cal-esteira-list">' + pausedNames.map((name, i) => _esteiraItemHtml(name, counts[name], `cal-menu-vp-${i}`, [
+                    { label: '▶️ Reativar na Esteira', action: `cal_reactivateFromPause('${_e(name)}')` },
+                    { label: '↩ Voltar para Teste', action: `cal_unvalidateTest('${_e(name)}')` },
+                    { label: '🗑️ Remover da Esteira', action: `cal_removeFromEsteira('${_e(name)}')`, danger: true },
+                ])).join('') + '</div>';
+            }
+        }
+        el.innerHTML = h;
+    }
+    // Núcleo único que TODA entrada de UI usa pra mudar o status operacional — Teste de
+    // Produtos, Esteira Ativa, Produtos Pausados, Gerenciar Produtos e o Termômetro (via
+    // window.cal_*) todos terminam exatamente aqui. Nunca apaga contagem/histórico/vendas.
+    function _setOperationalStatus(name, status, toastMsg) {
+        _setTestStatus(name, status);
+        _calSave(); _rTestGrid(); _rProdList();
+        if (typeof window.vtRender === 'function') window.vtRender();
+        if (toastMsg) _calToast(toastMsg);
+    }
+    function _validateTest(name) { // botão no card de Teste de Produtos (meta atingida)
+        if (!confirm(`Adicionar "${name}" à Esteira Ativa?\n\nA contagem e o histórico serão preservados.`)) return;
+        _setOperationalStatus(name, 'validated', '✅ Produto adicionado à Esteira!');
+    }
+    function _unvalidateTest(name) { // "↩ Voltar para Teste" (Esteira Ativa / Pausados)
+        if (!confirm(`Mover "${name}" de volta para Teste de Produtos?`)) return;
+        _setOperationalStatus(name, 'testing', 'Produto voltou para o Teste.');
+    }
+    // Atalho pelo Gerenciar Produtos/Editar Produto: mesmo status, sem exigir postagem/meta antes.
+    function _addToEsteira(name) { _setOperationalStatus(name, 'validated', '✅ Produto adicionado à Esteira!'); }
+    // Pausar: produto já validado, mas sem produção nova por enquanto — não é descarte.
+    function _pauseProduct(name) { _setOperationalStatus(name, 'paused', '⏸️ Produto pausado.'); }
+    function _reactivateFromPause(name) { _setOperationalStatus(name, 'validated', '▶️ Produto reativado na Esteira!'); }
+    // Remover da Esteira = descartar (com confirmação forte), preservando tudo — diferente de
+    // "Voltar para Teste", que é uma correção operacional mais leve.
+    function _removeFromEsteira(name) {
+        if (!confirm(`Remover "${name}" da Esteira?\n\nEle deixará de aparecer na produção e no Termômetro normal, mas seus históricos e contagens serão preservados.`)) return;
+        _setOperationalStatus(name, 'discarded', 'Produto removido da Esteira.');
+    }
+    function _discardTest(name) {
+        _setOperationalStatus(name, 'discarded');
+    }
+    function _reactivateTest(name) {
+        _setOperationalStatus(name, 'testing');
+    }
+    function _toggleEsteira() {
+        _esteiraOpen = !_esteiraOpen;
+        _rTestGrid();
+    }
+    let _pausedOpen = false;
+    function _togglePausedSection() {
+        _pausedOpen = !_pausedOpen;
+        _rTestGrid();
+    }
+    // Menu "⋯" genérico e reaproveitável — usado na Esteira Ativa, em Produtos Pausados e
+    // também pelo Termômetro (via window.cal_toggleRowMenu), sempre no mesmo padrão.
+    function _closeAllRowMenus() {
+        document.querySelectorAll('.cal-row-menu.open').forEach(m => m.classList.remove('open'));
+    }
+    function _toggleRowMenu(e, id) {
+        if (e) e.stopPropagation();
+        const menu = $id(id);
+        if (!menu) return;
+        const wasOpen = menu.classList.contains('open');
+        _closeAllRowMenus();
+        if (!wasOpen) menu.classList.add('open');
+    }
+    document.addEventListener('click', _closeAllRowMenus);
+
+    // ── DRAG & DROP ──
+    let _dragSrc = null;
+
+    function _attachDrag() {
+        $id('cal-mainTable').querySelectorAll('.cal-chip').forEach(chip => {
+            chip.addEventListener('dragstart', e => {
+                _dragSrc = { d: +chip.dataset.d, ai: +chip.dataset.ai, ci: +chip.dataset.ci };
+                chip.classList.add('cal-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', ''); // Firefox needs this
+            });
+            chip.addEventListener('dragend', () => {
+                chip.classList.remove('cal-dragging');
+                document.querySelectorAll('.cal-chip.cal-drag-over, .cal-cell.cal-drag-over').forEach(c => c.classList.remove('cal-drag-over'));
+                _dragSrc = null;
+            });
+            chip.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+                chip.classList.add('cal-drag-over');
+            });
+            chip.addEventListener('dragleave', () => chip.classList.remove('cal-drag-over'));
+            chip.addEventListener('drop', e => {
+                e.preventDefault(); e.stopPropagation();
+                chip.classList.remove('cal-drag-over');
+                if (!_dragSrc) return;
+                const dstD = +chip.dataset.d, dstAi = +chip.dataset.ai;
+                let dstCi = +chip.dataset.ci;
+                const sameCell = (_dragSrc.d === dstD && _dragSrc.ai === dstAi);
+                if (sameCell && _dragSrc.ci === dstCi) { _dragSrc = null; return; }
+                const srcCell = _getCell(_dragSrc.d, _dragSrc.ai);
+                const [moved] = srcCell.splice(_dragSrc.ci, 1);
+                if (sameCell && _dragSrc.ci < dstCi) dstCi--; // ajusta índice após remoção
+                const dstCell = _getCell(dstD, dstAi);
+                dstCell.splice(dstCi, 0, moved);
+                if (moved.posted && moved.postEventId && dstAi !== _dragSrc.ai) {
+                    _updatePostEventAccount(moved.postEventId, calData.accounts[dstAi]);
+                }
+                _dragSrc = null;
+                _calSave(); _calRender();
+            });
+        });
+        $id('cal-mainTable').querySelectorAll('.cal-cell').forEach(cell => {
+            cell.addEventListener('dragover', e => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                cell.classList.add('cal-drag-over');
+            });
+            cell.addEventListener('dragleave', () => cell.classList.remove('cal-drag-over'));
+            cell.addEventListener('drop', e => {
+                e.preventDefault();
+                cell.classList.remove('cal-drag-over');
+                if (!_dragSrc) return;
+                const dstD = +cell.dataset.d, dstAi = +cell.dataset.ai;
+                if (_dragSrc.d === dstD && _dragSrc.ai === dstAi) { _dragSrc = null; return; }
+                const srcCell = _getCell(_dragSrc.d, _dragSrc.ai);
+                const [moved] = srcCell.splice(_dragSrc.ci, 1);
+                _getCell(dstD, dstAi).push(moved);
+                if (moved.posted && moved.postEventId && dstAi !== _dragSrc.ai) {
+                    _updatePostEventAccount(moved.postEventId, calData.accounts[dstAi]);
+                }
+                _dragSrc = null;
+                _calSave(); _calRender();
+            });
+        });
+    }
+
+    function _rTable() {
+        const accs = calData.accounts;
+        let h = '<thead><tr><th>Dia</th>';
+        accs.forEach(a=>{ h+=`<th>${_e(a)}</th>`; });
+        h += '</tr></thead><tbody>';
+        for (let d=1; d<=7; d++) {
+            h += `<tr><td class="cal-day-label">Dia<br>${d}</td>`;
+            accs.forEach((_,ai)=>{
+                const items = _getCell(d,ai);
+                h += `<td class="cal-cell" data-d="${d}" data-ai="${ai}"><div class="cal-cell-inner">`;
+                items.forEach((it,ci)=>{
+                    const col = _prodColor(it.product), bg = _fmtColor(it.product,it.format);
+                    h += `<div class="cal-chip${it.posted?' posted':''}" draggable="true" data-d="${d}" data-ai="${ai}" data-ci="${ci}">
+                        <div class="cal-chip-check${it.posted?' checked':''}" onclick="cal_togglePosted(${d},${ai},${ci})" title="${it.posted?'Marcar como pendente':'Marcar como postado'}"></div>
+                        <span class="cal-chip-badge" style="background:${bg}">${_e(it.format)}</span>
+                        <span class="cal-chip-color" style="background:${col}"></span>
+                        <span class="cal-chip-name">${_e(it.product)} ${_e(it.format)}${_e(it.version)}${it.postedAt?`<span class="cal-chip-time" onclick="event.stopPropagation();cal_openEditTime(${d},${ai},${ci})" title="Corrigir horário">· ${_e(it.postedAt)}</span>`:''}</span>
+                        ${it.note?`<span class="cal-chip-note" title="${_e(it.note)}">${_e(it.note)}</span>`:''}
+                        <button class="cal-chip-edit" onclick="cal_openEdit(${d},${ai},${ci})" title="Editar">✎</button>
+                    </div>`;
+                });
+                h += `<button class="cal-btn-add-chip" onclick="cal_openAdd(${d},${ai})">+ Adicionar vídeo</button>`;
+                h += `</div></td>`;
+            });
+            h += '</tr>';
+        }
+        h += '</tbody>';
+        $id('cal-mainTable').innerHTML = h;
+        _attachDrag(); // liga drag & drop após render
+    }
+    function _rStats() {
+        let total=0, done=0;
+        Object.values(calData.schedule).forEach(arr=>arr.forEach(i=>{ total++; if(i.posted) done++; }));
+        $id('cal-statsEl').innerHTML = `<span>${done}</span> de <span>${total}</span> postagens feitas`;
+    }
+    function _rLegend() {
+        let h = '';
+        calData.products.forEach(p=>{ h+=`<div class="cal-legend-item"><div class="cal-legend-dot" style="background:${_prodColor(p.name)}"></div>${_e(p.name)}</div>`; });
+        const seen = new Set();
+        calData.products.forEach(p=>{
+            (p.formats||[]).forEach((f,fi)=>{
+                const k=`${f.abbr}|${fi}`;
+                if(!seen.has(k)){ seen.add(k); h+=`<div class="cal-legend-item"><span class="cal-legend-badge" style="background:${FMT_COLORS[fi]}">${_e(f.abbr)}</span>${_e(f.name)}</div>`; }
+            });
+        });
+        $id('cal-legendEl').innerHTML = h;
+    }
+
+    // ── TOGGLE POSTED ──
+    function _bumpTestCount(product, delta) {
+        if (!product) return;
+        if (!calData.testCounts) calData.testCounts = {};
+        const next = (calData.testCounts[product] || 0) + delta;
+        calData.testCounts[product] = Math.max(0, next);
+    }
+
+    // ── HISTÓRICO DE POSTAGENS — eventos permanentes ──
+    // Cada postagem real marcada como "postado" gera um evento próprio e permanente.
+    // F1/F2/F3 (versionName) é só um rótulo informativo: NUNCA é usado como chave de
+    // identidade. A identidade de um evento é o seu próprio id (postEventId).
+    function _createPostEvent(d, ai, it) {
+        const accountName = calData.accounts[ai];
+        const product = _prodObj(it.product);
+        const now = new Date();
+        const postedDate = _fmtDateISO(now);
+        const postedTime = it.postedAt || '';
+        const ev = {
+            id: _genId(),
+            accountId: accountName,
+            accountName: accountName,
+            productId: (product && product.id) || it.product,
+            productName: it.product,
+            versionName: `${it.format}${it.version}`,
+            postedDate,
+            postedTime,
+            postedTimestamp: _combineTimestamp(postedDate, postedTime),
+            createdAt: now.getTime(),
+        };
+        if (!calData.postHistory) calData.postHistory = [];
+        calData.postHistory.push(ev);
+        it.postEventId = ev.id;
+        return ev;
+    }
+    function _findPostEvent(id) { return (calData.postHistory || []).find(e => e.id === id); }
+    function _updatePostEventTime(it, newTime) {
+        const ev = _findPostEvent(it.postEventId);
+        if (!ev) return;
+        ev.postedTime = newTime;
+        ev.postedTimestamp = _combineTimestamp(ev.postedDate, newTime);
+        ev.updatedAt = Date.now();
+    }
+    function _updatePostEventMeta(eventId, productName, versionName) {
+        const ev = _findPostEvent(eventId);
+        if (!ev) return;
+        const product = _prodObj(productName);
+        ev.productId = (product && product.id) || productName;
+        ev.productName = productName;
+        ev.versionName = versionName;
+        ev.updatedAt = Date.now();
+    }
+    function _updatePostEventAccount(eventId, accountName) {
+        const ev = _findPostEvent(eventId);
+        if (!ev) return;
+        ev.accountId = accountName;
+        ev.accountName = accountName;
+        ev.updatedAt = Date.now();
+    }
+    function _removePostEvent(id) {
+        if (!id) return;
+        const idx = (calData.postHistory || []).findIndex(e => e.id === id);
+        if (idx !== -1) calData.postHistory.splice(idx, 1);
+    }
+
+    // API interna de consulta — pronta para o Termômetro de Vendas usar numa próxima etapa.
+    // Conta sempre por EVENTO (accountId + productId), nunca por versionName.
+    function _getPostHistory() { return calData.postHistory || []; }
+    function _getPostsByAccountProduct(accountId, productId) {
+        return (calData.postHistory || []).filter(e => e.accountId === accountId && e.productId === productId);
+    }
+    function _getPostCountByAccountProduct(accountId, productId) {
+        return _getPostsByAccountProduct(accountId, productId).length;
+    }
+    function _getLastPostByAccountProduct(accountId, productId) {
+        const list = _getPostsByAccountProduct(accountId, productId);
+        if (!list.length) return null;
+        return list.reduce((a, b) => (b.postedTimestamp > a.postedTimestamp ? b : a));
+    }
+    function _getPostsWithinHours(accountId, productId, hours) {
+        const cutoff = Date.now() - hours * 3600 * 1000;
+        return _getPostsByAccountProduct(accountId, productId).filter(e => e.postedTimestamp >= cutoff);
+    }
+    function _togglePosted(d,ai,ci) {
+        const it = _getCell(d,ai)[ci];
+        if (it.posted) {
+            // Desmarcar = correção operacional: o evento de postagem correspondente
+            // deixou de existir de fato, então some do Histórico também.
+            it.posted=false; it.postedAt='';
+            _bumpTestCount(it.product, -1);
+            if (it.postEventId) { _removePostEvent(it.postEventId); it.postEventId=null; }
+            _calSave(); _calRender();
+        }
+        else {
+            timeCtx={d,ai,ci,isEdit:false};
+            const now=new Date();
+            $id('cal-fPostedTime').value=`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            $id('cal-timeOverlay').classList.add('open');
+            setTimeout(()=>$id('cal-fPostedTime').focus(),50);
+        }
+    }
+    // Corrigir o horário de um vídeo que já está marcado como postado, sem
+    // desmarcá-lo — atualiza o MESMO evento no Histórico (não cria um novo).
+    function _openEditTime(d,ai,ci) {
+        const it = _getCell(d,ai)[ci];
+        if (!it.posted) return;
+        timeCtx={d,ai,ci,isEdit:true};
+        $id('cal-fPostedTime').value = it.postedAt || '';
+        $id('cal-timeOverlay').classList.add('open');
+        setTimeout(()=>$id('cal-fPostedTime').focus(),50);
+    }
+    function _confirmPosted() {
+        if(!timeCtx) return;
+        const {d,ai}=timeCtx, it=_getCell(d,ai)[timeCtx.ci];
+        const newTime = $id('cal-fPostedTime').value||'';
+        if (timeCtx.isEdit) {
+            it.postedAt = newTime;
+            _updatePostEventTime(it, newTime);
+        } else {
+            it.posted=true; it.postedAt=newTime;
+            _bumpTestCount(it.product, 1);
+            _createPostEvent(d, ai, it);
+        }
+        // Auto-sort: postados com horário primeiro (ordem cronológica), depois os pendentes
+        const cell = _getCell(d, ai);
+        cell.sort((a, b) => {
+            if (a.postedAt && b.postedAt) return a.postedAt.localeCompare(b.postedAt);
+            if (a.postedAt) return -1;
+            if (b.postedAt) return 1;
+            return 0;
+        });
+        _calSave(); _calRender(); _closeTimeModal();
+    }
+    function _closeTimeModal(e) {
+        if(e && e.target!==$id('cal-timeOverlay')) return;
+        $id('cal-timeOverlay').classList.remove('open'); timeCtx=null;
+    }
+
+    // ── VIDEO MODAL ──
+    function _openAdd(d,ai) {
+        editCtx={d,ai,ci:null}; _popDayAcc(d,ai);
+        $id('cal-modalTitle').textContent='Adicionar Vídeo';
+        $id('cal-btnDelete').style.display='none';
+        $id('cal-fNote').value='';
+        _popProduct(null);
+        $id('cal-videoOverlay').classList.add('open');
+    }
+    function _openEdit(d,ai,ci) {
+        editCtx={d,ai,ci}; _popDayAcc(d,ai);
+        const it=_getCell(d,ai)[ci];
+        $id('cal-modalTitle').textContent='Editar Vídeo';
+        $id('cal-btnDelete').style.display='';
+        $id('cal-fNote').value=it.note||'';
+        _popProduct(it.product);
+        _popVersion(it.product,`${it.format}|${it.version}`);
+        $id('cal-fVersionSelect').value=`${it.format}|${it.version}`;
+        $id('cal-videoOverlay').classList.add('open');
+    }
+    function _popProduct(sel) {
+        const el=$id('cal-fProduct'); el.innerHTML='';
+        calData.products.map(p=>p.name)
+            .sort((a,b)=>a.localeCompare(b,'pt-BR',{sensitivity:'base'}))
+            .forEach(n=>{ const o=document.createElement('option'); o.value=n; o.textContent=n; if(n===sel) o.selected=true; el.appendChild(o); });
+        _popVersion(el.value,null);
+    }
+    function _onProductChange() { _popVersion($id('cal-fProduct').value,null); }
+    function _popVersion(name,cur) {
+        const sel=$id('cal-fVersionSelect'), noMsg=$id('cal-noVersionsMsg'), btn=$id('cal-btnSaveVideo');
+        sel.innerHTML='';
+        const avail=_avail(name,cur);
+        const grps={};
+        avail.forEach(v=>{ if(!grps[v.format]) grps[v.format]={name:v.formatName,items:[]}; grps[v.format].items.push(v); });
+        Object.entries(grps).forEach(([abbr,g])=>{
+            const grp=document.createElement('optgroup'); grp.label=`${g.name} (${abbr})`;
+            g.items.forEach(v=>{ const o=document.createElement('option'); o.value=`${v.format}|${v.version}`; o.textContent=`${v.format}${v.version} — ${v.formatName}`; grp.appendChild(o); });
+            sel.appendChild(grp);
+        });
+        sel.style.display=avail.length?'':'none'; noMsg.style.display=avail.length?'none':''; btn.disabled=!avail.length;
+    }
+    function _consumeFreedPass(product, key) {
+        // Gasta o "passe liberado" (Limpar Uso) no momento em que a versão é
+        // de fato reutilizada — sem isso, a cota liberada ficava valendo pra
+        // sempre e a mesma versão continuava aparecendo disponível depois de já usada.
+        const freed = calData.freedVersions && calData.freedVersions[product];
+        if (freed && freed[key] > 0) {
+            freed[key]--;
+            if (freed[key] <= 0) delete freed[key];
+        }
+    }
+    function _saveVideo() {
+        const product=$id('cal-fProduct').value, vk=$id('cal-fVersionSelect').value;
+        if(!vk){ _calToast('Selecione uma versão.'); return; }
+        const [fmt,ver]=vk.split('|'), note=$id('cal-fNote').value.trim();
+        const {d,ai,ci}=editCtx, cell=_getCell(d,ai);
+        // Destino (mobile): o modal permite mudar dia/conta — no desktop isso é arrastar o vídeo.
+        const nd = parseInt($id('cal-fDay').value, 10) || d;
+        const nai = parseInt($id('cal-fAccount').value, 10);
+        const dstAi = Number.isNaN(nai) ? ai : nai;
+        const key = `${fmt}|${ver}`;
+        const isNewUsage = ci===null || `${cell[ci].format}|${cell[ci].version}` !== key;
+        const entry={product,format:fmt,version:ver,note,posted:false};
+        if(ci===null) _getCell(nd,dstAi).push(entry);
+        else {
+            // Preserva o estado de postagem (e o vínculo com o evento no Histórico)
+            // ao só corrigir produto/versão/observação de um vídeo já postado.
+            entry.posted = cell[ci].posted;
+            entry.postedAt = cell[ci].postedAt;
+            entry.postEventId = cell[ci].postEventId;
+            if (nd===d && dstAi===ai) cell[ci]=entry;
+            else {
+                cell.splice(ci,1);
+                _getCell(nd,dstAi).push(entry);
+                // mesma regra do arrastar do desktop: postagem já registrada acompanha a conta nova
+                if (entry.posted && entry.postEventId && dstAi!==ai) _updatePostEventAccount(entry.postEventId, calData.accounts[dstAi]);
+            }
+            if (entry.posted && entry.postEventId) _updatePostEventMeta(entry.postEventId, product, `${fmt}${ver}`);
+        }
+        if (isNewUsage) _consumeFreedPass(product, key);
+        _calSave(); _calRender(); _closeVideoModal();
+        _calToast(ci===null?'Vídeo adicionado!':(nd!==d||dstAi!==ai?'Vídeo movido!':'Vídeo atualizado!'));
+    }
+    function _deleteVideo() {
+        const {d,ai,ci}=editCtx;
+        const cell = _getCell(d,ai);
+        const it = cell[ci];
+        if (it && it.posted) {
+            _bumpTestCount(it.product, -1);
+            if (it.postEventId) _removePostEvent(it.postEventId);
+        }
+        cell.splice(ci,1);
+        _calSave(); _calRender(); _closeVideoModal(); _calToast('Vídeo removido.');
+    }
+    function _closeVideoModal(e) {
+        if(e && e.target!==$id('cal-videoOverlay')) return;
+        $id('cal-videoOverlay').classList.remove('open');
+    }
+
+    // ── LIMPAR SEMANA ──
+    function _openConfirm()  { $id('cal-confirmOverlay').classList.add('open'); }
+    function _closeConfirm(e) {
+        if(e && e.target!==$id('cal-confirmOverlay')) return;
+        $id('cal-confirmOverlay').classList.remove('open');
+    }
+    function _clearWeek() {
+        // Salva versões usadas no histórico antes de apagar o schedule.
+        // "Passe liberado" (freedVersions) só existe pra não bloquear o
+        // reagendamento DENTRO da mesma semana — ao limpar a semana, toda
+        // versão que foi de fato usada entra no histórico normalmente,
+        // mesmo que tivesse passe liberado.
+        if (!calData.usedHistory) calData.usedHistory = {};
+        Object.values(calData.schedule).forEach(arr => arr.forEach(it => {
+            if (!it.product) return;
+            const key = `${it.format}|${it.version}`;
+            if (!calData.usedHistory[it.product]) calData.usedHistory[it.product] = [];
+            if (!calData.usedHistory[it.product].includes(key)) {
+                calData.usedHistory[it.product].push(key);
+            }
+        }));
+        calData.schedule = {};
+        calData.freedVersions = {}; // nova semana = passes livres zerados
+        _calSave(); _calRender(); _closeConfirm();
+        _calToast('Semana limpa! Versões usadas continuam marcadas.');
+    }
+    function _resetUsedHistory() {
+        if (!confirm('Resetar o histórico de uso de todos os produtos? As versões voltarão a estar disponíveis.')) return;
+        calData.usedHistory = {};
+        calData.freedVersions = {};
+        _calSave(); _calRender();
+        _calToast('Histórico de uso resetado!');
+    }
+
+    // ── PAINEL DE HISTÓRICO (postagens reais) ──
+    function _histAccounts() {
+        // contas atuais + quaisquer contas antigas que só existem em eventos passados
+        const set = new Set(calData.accounts);
+        (calData.postHistory || []).forEach(e => set.add(e.accountName));
+        return Array.from(set);
+    }
+    function _histProducts() {
+        const set = new Set(calData.products.map(p => p.name));
+        (calData.postHistory || []).forEach(e => set.add(e.productName));
+        return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR', {sensitivity:'base'}));
+    }
+    function _openHistory() {
+        _histPopulateFilters();
+        $id('cal-histBackdrop').classList.add('open');
+        _histRender();
+    }
+    function _closeHistory() { $id('cal-histBackdrop').classList.remove('open'); }
+    function _histBackdropClick(e) { if (e.target === $id('cal-histBackdrop')) _closeHistory(); }
+    function _histPopulateFilters() {
+        const accSel = $id('cal-hist-fAccount'), curA = accSel.value;
+        accSel.innerHTML = '<option value="">Todas as contas</option>' +
+            _histAccounts().map(a => `<option value="${_e(a)}">${_e(a)}</option>`).join('');
+        if (curA) accSel.value = curA;
+        const prodSel = $id('cal-hist-fProduct'), curP = prodSel.value;
+        prodSel.innerHTML = '<option value="">Todos os produtos</option>' +
+            _histProducts().map(p => `<option value="${_e(p)}">${_e(p)}</option>`).join('');
+        if (curP) prodSel.value = curP;
+    }
+    function _histFilteredList() {
+        const acc = $id('cal-hist-fAccount').value;
+        const prod = $id('cal-hist-fProduct').value;
+        const period = $id('cal-hist-fPeriod').value;
+        const search = $id('cal-hist-fSearch').value.trim().toLowerCase();
+        let list = (calData.postHistory || []).slice();
+        if (acc) list = list.filter(e => e.accountName === acc);
+        if (prod) list = list.filter(e => e.productName === prod);
+        if (search) list = list.filter(e => e.productName.toLowerCase().includes(search));
+        if (period !== 'all') {
+            const days = period === 'today' ? 0 : period === '2d' ? 1 : period === '7d' ? 6 : 29;
+            const now = new Date();
+            const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, 0, 0, 0, 0).getTime();
+            list = list.filter(e => e.postedTimestamp >= cutoff);
+        }
+        list.sort((a, b) => b.postedTimestamp - a.postedTimestamp);
+        return list;
+    }
+    function _histRender() {
+        const list = _histFilteredList();
+        $id('cal-hist-count').textContent = `${list.length} postage${list.length===1?'m':'ns'} encontrada${list.length===1?'':'s'}`;
+        const el = $id('cal-hist-list');
+        if (!list.length) { el.innerHTML = '<div class="cal-hist-empty">Nenhuma postagem encontrada.</div>'; return; }
+        const groups = []; let lastDate = null, curGroup = null;
+        list.forEach(e => {
+            if (e.postedDate !== lastDate) { curGroup = { date: e.postedDate, items: [] }; groups.push(curGroup); lastDate = e.postedDate; }
+            curGroup.items.push(e);
+        });
+        const todayISO = _fmtDateISO(new Date());
+        let h = groups.map(g => {
+            const label = g.date === todayISO ? `Hoje — ${_fmtDateBR(g.date)}` : _fmtDateBR(g.date);
+            return `<div class="cal-hist-daygroup">
+                <div class="cal-hist-daylabel">${_e(label)}</div>
+                ${g.items.map(e => `
+                <div class="cal-hist-row">
+                    <span class="cal-hist-time">${_e(e.postedTime||'--:--')}</span>
+                    <span class="cal-hist-acc" title="${_e(e.accountName)}">${_e(e.accountName)}</span>
+                    <span class="cal-hist-prod" title="${_e(e.productName)}">${_e(e.productName)}</span>
+                    <span class="cal-hist-ver">${_e(e.versionName||'')}</span>
+                    <span class="cal-hist-actions">
+                        <button onclick="cal_histOpenEdit('${e.id}')" title="Editar">✎</button>
+                        <button onclick="cal_histOpenDeleteConfirm('${e.id}')" title="Excluir">🗑</button>
+                    </span>
+                </div>`).join('')}
+            </div>`;
+        }).join('');
+        // resumo simples por conta+produto (não é um dashboard — só uma contagem rápida)
+        const summary = {};
+        list.forEach(e => { const k = `${e.accountName} — ${e.productName}`; summary[k] = (summary[k]||0) + 1; });
+        const summaryRows = Object.entries(summary).sort((a,b) => b[1]-a[1]).slice(0, 12);
+        if (summaryRows.length) {
+            h += `<div class="cal-hist-summary">
+                <div class="cal-hist-summary-title">Resumo</div>
+                ${summaryRows.map(([k,c]) => `<div class="cal-hist-summary-row"><span>${_e(k)}</span><span>${c}</span></div>`).join('')}
+            </div>`;
+        }
+        el.innerHTML = h;
+    }
+    let _histEditId = null;
+    function _histOpenEdit(id) {
+        const ev = _findPostEvent(id);
+        if (!ev) return;
+        _histEditId = id;
+        const accSel = $id('cal-hist-eAccount');
+        accSel.innerHTML = _histAccounts().map(a => `<option value="${_e(a)}">${_e(a)}</option>`).join('');
+        accSel.value = ev.accountName;
+        const prodSel = $id('cal-hist-eProduct');
+        prodSel.innerHTML = _histProducts().map(p => `<option value="${_e(p)}">${_e(p)}</option>`).join('');
+        prodSel.value = ev.productName;
+        $id('cal-hist-eDate').value = ev.postedDate;
+        $id('cal-hist-eTime').value = ev.postedTime;
+        $id('cal-histEditOverlay').classList.add('open');
+    }
+    function _histCloseEdit(e) {
+        if (e && e.target !== $id('cal-histEditOverlay')) return;
+        $id('cal-histEditOverlay').classList.remove('open'); _histEditId = null;
+    }
+    function _histSaveEdit() {
+        const ev = _findPostEvent(_histEditId);
+        if (!ev) { _histCloseEdit(); return; }
+        const accountName = $id('cal-hist-eAccount').value;
+        const productName = $id('cal-hist-eProduct').value;
+        const date = $id('cal-hist-eDate').value;
+        const time = $id('cal-hist-eTime').value;
+        if (!date) { _calToast('Informe a data.'); return; }
+        ev.accountId = accountName; ev.accountName = accountName;
+        const product = _prodObj(productName);
+        ev.productId = (product && product.id) || productName;
+        ev.productName = productName;
+        ev.postedDate = date;
+        ev.postedTime = time;
+        ev.postedTimestamp = _combineTimestamp(date, time);
+        ev.updatedAt = Date.now();
+        _calSave();
+        _histCloseEdit();
+        _histPopulateFilters();
+        _histRender();
+        _calToast('Postagem atualizada.');
+    }
+    let _histDeleteId = null;
+    function _histOpenDeleteConfirm(id) { _histDeleteId = id; $id('cal-histDeleteOverlay').classList.add('open'); }
+    function _histCloseDeleteConfirm(e) {
+        if (e && e.target !== $id('cal-histDeleteOverlay')) return;
+        $id('cal-histDeleteOverlay').classList.remove('open'); _histDeleteId = null;
+    }
+    function _histConfirmDelete() {
+        if (!_histDeleteId) return;
+        const id = _histDeleteId;
+        _removePostEvent(id);
+        // se o slot que originou esse evento ainda estiver visível no calendário atual,
+        // desfaz o "postado" pra não ficar um vídeo marcado sem evento por trás
+        Object.values(calData.schedule).forEach(arr => arr.forEach(it => {
+            if (it.postEventId === id) { it.posted=false; it.postedAt=''; it.postEventId=null; _bumpTestCount(it.product, -1); }
+        }));
+        _calSave();
+        _histCloseDeleteConfirm();
+        _histPopulateFilters();
+        _histRender();
+        _calRender();
+        _calToast('Postagem excluída do histórico.');
+    }
+
+    // ── PRODUTOS ──
+    function _openManageProducts() {
+        _rProdList(); $id('cal-prodListView').style.display=''; $id('cal-prodFormView').style.display='none';
+        $id('cal-productsOverlay').classList.add('open');
+    }
+    function _closeProdModal(e) {
+        if(e && e.target!==$id('cal-productsOverlay')) return;
+        $id('cal-productsOverlay').classList.remove('open'); _calRender();
+    }
+    function _rProdList() {
+        let h='';
+        const order = calData.products
+            .map((p,idx)=>idx)
+            .sort((a,b)=>calData.products[a].name.localeCompare(calData.products[b].name,'pt-BR',{sensitivity:'base'}));
+        order.forEach(idx=>{
+            const p = calData.products[idx];
+            const inUse=_productBlocked(p.name), sub=(p.formats||[]).map(f=>`${f.abbr}(${f.versions})`).join(' · ');
+            const esteiraBtn = _esteiraListBtn(p.name);
+            h+=`<div class="cal-prod-list-item">
+                <div class="cal-legend-dot" style="background:${_prodColor(p.name)};width:12px;height:12px;border-radius:50%;flex-shrink:0"></div>
+                <div class="cal-prod-list-info"><div class="cal-prod-list-name">${_e(p.name)}</div><div class="cal-prod-list-sub">${sub||'sem formatos'}</div></div>
+                <button class="cal-btn cal-btn-sm" onclick="cal_openProductForm(${idx})">Editar</button>
+                <button class="cal-btn cal-btn-sm" style="background:#e67e22;color:#fff" onclick="cal_openFmtEdit(${idx})" title="Marcar/desmarcar quais versões estão em uso">🔧 Editar uso</button>
+                <button class="cal-btn cal-btn-sm cal-esteira-toggle-btn${esteiraBtn.cls?' '+esteiraBtn.cls:''}" onclick="${esteiraBtn.action}">${esteiraBtn.label}</button>
+                ${inUse
+                    ? `<span style="font-size:11px;color:#7b80a0">em uso</span>`
+                    : `<button class="cal-btn cal-btn-sm cal-btn-danger" onclick="cal_removeProduct(${idx})">Remover</button>`
+                }
+            </div>`;
+        });
+        $id('cal-productsList').innerHTML=h||'<p style="color:#7b80a0;font-size:13px">Nenhum produto cadastrado.</p>';
+    }
+    function _removeProduct(idx) { calData.products.splice(idx,1); _calSave(); _rProdList(); _calRender(); }
+    function _openProductForm(idx) {
+        editProdIdx=idx;
+        $id('cal-prodFormTitle').textContent=idx===-1?'Novo Produto':'Editar Produto';
+        if(idx===-1){ $id('cal-fpName').value=''; tempFmts=[]; $id('cal-fp-esteira-group').style.display='none'; }
+        else {
+            const p=calData.products[idx]; $id('cal-fpName').value=p.name; tempFmts=(p.formats||[]).map(f=>({...f}));
+            $id('cal-fp-esteira-group').style.display='';
+            _updateEsteiraFormBtn(p.name);
+        }
+        _rFmts();
+        $id('cal-btn-fmtedit').style.display = idx===-1 ? 'none' : '';
+        $id('cal-prodListView').style.display='none';
+        $id('cal-prodFormView').style.display='';
+        $id('cal-fmtEditView').style.display='none';
+        setTimeout(()=>$id('cal-fpName').focus(),30);
+    }
+    // Botão compacto do Gerenciar Produtos — mesmo padrão testing/validated/paused/discarded,
+    // clicar sempre resulta no mesmo _setOperationalStatus usado em todas as outras telas.
+    function _esteiraListBtn(name) {
+        const status = _testStatus(name);
+        if (status === 'validated') return { label: '✅ Na Esteira', action: `cal_removeFromEsteira('${_e(name)}')`, cls: 'active' };
+        if (status === 'paused') return { label: '⏸️ Pausado — Reativar', action: `cal_reactivateFromPause('${_e(name)}')`, cls: 'paused' };
+        return { label: '✅ Adicionar à Esteira', action: `cal_addToEsteira('${_e(name)}')`, cls: '' };
+    }
+    function _updateEsteiraFormBtn(name) {
+        const btn = $id('cal-fp-esteira-btn');
+        if (!btn) return;
+        const status = _testStatus(name);
+        let text, cls;
+        if (status === 'validated') { text = '✅ Produto na Esteira (clique pra remover)'; cls = 'active'; }
+        else if (status === 'paused') { text = '⏸️ Pausado (clique pra reativar)'; cls = 'paused'; }
+        else { text = '✅ Adicionar à Esteira Ativa'; cls = ''; }
+        btn.textContent = text;
+        btn.className = 'cal-btn cal-esteira-form-btn' + (cls ? ' ' + cls : '');
+    }
+    function _toggleEsteiraFromForm() {
+        if (editProdIdx === -1) return;
+        const p = calData.products[editProdIdx];
+        if (!p) return;
+        const status = _testStatus(p.name);
+        if (status === 'validated') _removeFromEsteira(p.name);
+        else if (status === 'paused') _reactivateFromPause(p.name);
+        else _addToEsteira(p.name);
+        _updateEsteiraFormBtn(p.name);
+    }
+    function _closeProductForm() {
+        $id('cal-prodFormView').style.display='none';
+        $id('cal-fmtEditView').style.display='none';
+        $id('cal-prodListView').style.display=''; _rProdList();
+    }
+
+    // ── EDITAR VERSÕES MANUALMENTE ──
+    let _fmtEditFromList = false;
+    function _openFmtEdit(idx) {
+        if (typeof idx === 'number' && idx !== -1) {
+            // Aberto direto da lista de produtos (sem passar pelo formulário de edição)
+            editProdIdx = idx;
+            _fmtEditFromList = true;
+            $id('cal-prodListView').style.display='none';
+        } else {
+            if(editProdIdx===-1) return;
+            _fmtEditFromList = false;
+        }
+        const p=calData.products[editProdIdx];
+        $id('cal-fmtedit-title').textContent='Versões — '+p.name;
+        _rFmtEdit();
+        $id('cal-prodFormView').style.display='none';
+        $id('cal-fmtEditView').style.display='';
+    }
+    function _closeFmtEdit() {
+        $id('cal-fmtEditView').style.display='none';
+        if (_fmtEditFromList) {
+            $id('cal-prodListView').style.display='';
+            _rProdList();
+        } else {
+            $id('cal-prodFormView').style.display='';
+        }
+    }
+    function _rFmtEdit() {
+        if(editProdIdx===-1) return;
+        const p = calData.products[editProdIdx];
+        const name = p.name;
+        // Monta schedCount
+        const schedCount={};
+        Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{
+            if(it.product===name){ const k=`${it.format}|${it.version}`; schedCount[k]=(schedCount[k]||0)+1; }
+        }));
+        const freed   = ((calData.freedVersions||{})[name])||{};
+        const history = new Set((calData.usedHistory||{})[name]||[]);
+
+        let h='';
+        (p.formats||[]).forEach(f=>{
+            h+=`<div class="cal-fmtedit-fmt-title">${_e(f.name)} (${_e(f.abbr)})</div>`;
+            for(let v=1;v<=f.versions;v++){
+                const key=`${f.abbr}|${v}`;
+                const net=(schedCount[key]||0)-(freed[key]||0);
+                const inSched=net>0, inHist=history.has(key);
+                const inUse=inSched||inHist;
+                let badge='', badgeCls='free';
+                if(inSched&&inHist){ badge='calendário + hist.'; badgeCls='sched'; }
+                else if(inSched)   { badge='no calendário';      badgeCls='sched'; }
+                else if(inHist)    { badge='histórico';          badgeCls='hist'; }
+                else               { badge='livre';              badgeCls='free'; }
+                const chk=inUse?'checked':'';
+                h+=`<div class="cal-fmtedit-ver-row" onclick="this.querySelector('input').click()">
+                    <input type="checkbox" ${chk} onclick="event.stopPropagation();cal_toggleVersion('${_e(name)}','${key}',this.checked)">
+                    <span class="cal-fmtedit-ver-label">${_e(f.abbr)} ${v}</span>
+                    <span class="cal-fmtedit-badge ${badgeCls}">${badge}</span>
+                </div>`;
+            }
+        });
+        $id('cal-fmtedit-list').innerHTML=h;
+    }
+    function _toggleVersion(prodName, key, makeUsed) {
+        if(!calData.freedVersions) calData.freedVersions={};
+        if(!calData.freedVersions[prodName]) calData.freedVersions[prodName]={};
+        if(!calData.usedHistory) calData.usedHistory={};
+        if(!calData.usedHistory[prodName]) calData.usedHistory[prodName]=[];
+
+        const schedCount={};
+        Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{
+            if(it.product===prodName){ const k=`${it.format}|${it.version}`; schedCount[k]=(schedCount[k]||0)+1; }
+        }));
+
+        if(makeUsed){
+            // Bloquear: remove passes livres e adiciona ao histórico
+            delete calData.freedVersions[prodName][key];
+            if(!calData.usedHistory[prodName].includes(key))
+                calData.usedHistory[prodName].push(key);
+        } else {
+            // Liberar: remove do histórico e adiciona passes livres se estiver no calendário
+            calData.usedHistory[prodName]=calData.usedHistory[prodName].filter(k=>k!==key);
+            const inSched=schedCount[key]||0;
+            if(inSched>0) calData.freedVersions[prodName][key]=inSched;
+            else delete calData.freedVersions[prodName][key];
+        }
+        _calSave();
+        _rFmtEdit(); // re-renderiza pra refletir novo estado
+        _calToast(makeUsed?'Versão bloqueada.':'Versão liberada.');
+    }
+    function _rFmts() {
+        const c=$id('cal-formatsContainer');
+        if(!tempFmts.length){ c.innerHTML=`<p style="color:#7b80a0;font-size:13px;padding:8px 0">Nenhum formato. Clique em "+ Adicionar Formato".</p>`; return; }
+        c.innerHTML=tempFmts.map((f,i)=>`
+            <div class="cal-format-row">
+                <input type="text" class="cal-inp cal-inp-sm fr-name" value="${_e(f.name)}" placeholder="Nome (ex: Fábrica)"
+                    oninput="cal_syncFmt(${i},'name',this.value); cal_autoAbbr(${i},this.value)">
+                <input type="text" class="cal-inp cal-inp-sm fr-abbr" value="${_e(f.abbr)}" placeholder="Abrev" maxlength="3"
+                    oninput="cal_syncFmt(${i},'abbr',this.value.toUpperCase()); this.value=this.value.toUpperCase()">
+                <input type="number" class="cal-inp cal-inp-sm fr-versions" value="${f.versions}" min="1" max="999" title="Qtd versões"
+                    oninput="cal_syncFmt(${i},'versions',parseInt(this.value)||1)">
+                <span style="font-size:11px;color:#7b80a0;white-space:nowrap">versões</span>
+                <button style="flex-shrink:0;background:none;border:none;color:#7b80a0;font-size:18px;cursor:pointer;padding:0 2px;line-height:1"
+                    onmouseover="this.style.color='#e74c3c'" onmouseout="this.style.color='#7b80a0'"
+                    onclick="cal_removeFmt(${i})" title="Remover">×</button>
+            </div>`).join('');
+    }
+    function _syncFmt(idx,key,val) { if(tempFmts[idx]) tempFmts[idx][key]=val; }
+    function _autoAbbr(idx,name) {
+        if(!tempFmts[idx]) return;
+        const rows=document.querySelectorAll('#cal-formatsContainer .cal-format-row');
+        if(!rows[idx]) return;
+        const inp=rows[idx].querySelector('.fr-abbr');
+        if(!inp||inp.value) return;
+        if(name){ inp.value=name[0].toUpperCase(); tempFmts[idx].abbr=inp.value; }
+    }
+    function _addFmt() {
+        tempFmts.push({name:'',abbr:'',versions:15}); _rFmts();
+        setTimeout(()=>{ const ns=document.querySelectorAll('#cal-formatsContainer .fr-name'); if(ns.length) ns[ns.length-1].focus(); },20);
+    }
+    function _removeFmt(idx) { tempFmts.splice(idx,1); _rFmts(); }
+    function _saveProduct() {
+        const name=$id('cal-fpName').value.trim();
+        if(!name){ _calToast('Informe o nome do produto.'); return; }
+        const rows=document.querySelectorAll('#cal-formatsContainer .cal-format-row');
+        const fmts=[]; let valid=true;
+        rows.forEach(r=>{
+            const fn=r.querySelector('.fr-name').value.trim(), ab=r.querySelector('.fr-abbr').value.trim().toUpperCase(), vs=parseInt(r.querySelector('.fr-versions').value)||1;
+            if(!fn||!ab) valid=false; else fmts.push({name:fn,abbr:ab,versions:vs});
+        });
+        if(!valid){ _calToast('Preencha nome e abreviação de todos os formatos.'); return; }
+        if(!fmts.length){ _calToast('Adicione pelo menos um formato.'); return; }
+        if(new Set(fmts.map(f=>f.abbr)).size!==fmts.length){ _calToast('Abreviações duplicadas no mesmo produto.'); return; }
+        const names=calData.products.map(p=>p.name);
+        if(editProdIdx===-1){
+            if(names.includes(name)){ _calToast('Produto já existe.'); return; }
+            calData.products.push({name,formats:fmts,id:_genId()}); _prodColor(name);
+        } else {
+            const old=calData.products[editProdIdx], oldN=old.name;
+            if(oldN!==name && names.includes(name)){ _calToast('Já existe um produto com esse nome.'); return; }
+            if(oldN!==name){
+                Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{ if(it.product===oldN) it.product=name; }));
+                if(calData.productColors[oldN]){ calData.productColors[name]=calData.productColors[oldN]; delete calData.productColors[oldN]; }
+            }
+            (old.formats||[]).forEach((of,fi)=>{ const nf=fmts[fi]; if(nf&&nf.abbr!==of.abbr) Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{ if(it.product===name&&it.format===of.abbr) it.format=nf.abbr; })); });
+            // Mantém o mesmo id ao renomear — o Histórico usa productId pra relacionar,
+            // então o produto renomeado continua ligado às suas postagens antigas.
+            calData.products[editProdIdx]={name,formats:fmts,id:old.id||_genId()};
+        }
+        _calSave(); _closeProductForm(); _calRender();
+        _calToast(editProdIdx===-1?'Produto adicionado!':'Produto salvo!');
+    }
+
+    // ── CONTAS ──
+    function _openManageAccounts() { _rAccList(); $id('cal-newAccInput').value=''; $id('cal-accountsOverlay').classList.add('open'); }
+    function _closeAccModal(e) {
+        if(e && e.target!==$id('cal-accountsOverlay')) return;
+        $id('cal-accountsOverlay').classList.remove('open'); _calRender();
+    }
+    let _accEditIdx = null;
+    function _rAccList() {
+        let h='';
+        calData.accounts.forEach((a,idx)=>{
+            const can=calData.accounts.length>1;
+            if (_accEditIdx === idx) {
+                h+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2e3350">
+                    <input type="text" class="cal-inp" id="cal-accEditInput" value="${_e(a)}" style="flex:1" onkeydown="if(event.key==='Enter')cal_saveAccountName(${idx});if(event.key==='Escape')cal_cancelEditAccount()">
+                    <button class="cal-btn cal-btn-sm cal-btn-primary" onclick="cal_saveAccountName(${idx})">Salvar</button>
+                    <button class="cal-btn cal-btn-sm" onclick="cal_cancelEditAccount()">Cancelar</button>
+                </div>`;
+            } else {
+                h+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2e3350">
+                    <span style="flex:1;font-size:13px;color:#e2e4f0">${_e(a)}</span>
+                    <button class="cal-btn cal-btn-sm" onclick="cal_editAccountName(${idx})">Editar</button>
+                    ${can?`<button class="cal-btn cal-btn-sm cal-btn-danger" onclick="cal_removeAccount(${idx})">Remover</button>`:`<span style="font-size:11px;color:#7b80a0">mínimo</span>`}
+                </div>`;
+            }
+        });
+        $id('cal-accountsList').innerHTML=h;
+        if (_accEditIdx !== null) {
+            const inp = $id('cal-accEditInput');
+            if (inp) { inp.focus(); inp.select(); }
+        }
+    }
+    function _editAccountName(idx) { _accEditIdx = idx; _rAccList(); }
+    function _cancelEditAccount() { _accEditIdx = null; _rAccList(); }
+    function _saveAccountName(idx) {
+        const inp = $id('cal-accEditInput');
+        const val = inp ? inp.value.trim() : '';
+        if (!val) { _calToast('Nome não pode ficar vazio.'); return; }
+        if (calData.accounts.some((a,i)=>a===val && i!==idx)) { _calToast('Já existe uma conta com esse nome.'); return; }
+        calData.accounts[idx] = val;
+        _accEditIdx = null;
+        _calSave(); _rAccList(); _calToast('Conta renomeada!');
+    }
+    function _addAccount() {
+        const val=$id('cal-newAccInput').value.trim();
+        if(!val) return;
+        if(calData.accounts.includes(val)){ _calToast('Conta já existe.'); return; }
+        calData.accounts.push(val); _calSave(); $id('cal-newAccInput').value=''; _rAccList(); _calToast('Conta adicionada!');
+    }
+    function _removeAccount(idx) {
+        if(calData.accounts.length<=1) return;
+        for(let d=1;d<=7;d++){
+            delete calData.schedule[_cellKey(d,idx)];
+            for(let ai=idx+1;ai<calData.accounts.length;ai++){
+                const o=_cellKey(d,ai), n=_cellKey(d,ai-1);
+                if(calData.schedule[o]){ calData.schedule[n]=calData.schedule[o]; delete calData.schedule[o]; }
+            }
+        }
+        calData.accounts.splice(idx,1); _calSave(); _rAccList(); _calToast('Conta removida.');
+    }
+
+    // ── EXPORT & TOAST ──
+    function _exportJSON() {
+        const a=document.createElement('a');
+        a.href=URL.createObjectURL(new Blob([JSON.stringify(calData,null,2)],{type:'application/json'}));
+        a.download='calendario-tiktok.json'; a.click(); _calToast('Exportado!');
+    }
+    function _calToast(msg) {
+        const el=$id('cal-toast'); el.textContent=msg; el.classList.add('show');
+        clearTimeout(toastTmr); toastTmr=setTimeout(()=>el.classList.remove('show'),2500);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // MOBILE — injetado DENTRO do módulo do Calendário (mobile/build_mobile.py).
+    // Usa os mesmos helpers privados do Hub (_getCell, _prodColor, _fmtColor, _e…),
+    // então regras de versão/uso/histórico/Esteira são exatamente as do desktop.
+    // ══════════════════════════════════════════════════════════════════
+    let _mDay = parseInt(localStorage.getItem('mcal-day'), 10) || 1;
+    let _mAcc = -1;                 // -1 = todas as contas
+    let _mView = 'agenda';
+
+    // Leitura sem criar células vazias (o render não pode "sujar" o calendário e
+    // disparar sincronização à toa).
+    function _peek(d, ai) { return calData.schedule[_cellKey(d, ai)] || []; }
+
+    function _mDayStats(d) {
+        let t = 0, p = 0;
+        calData.accounts.forEach((_, ai) => _peek(d, ai).forEach(it => { t++; if (it.posted) p++; }));
+        return { t, p };
+    }
+
+    function _mRenderStats() {
+        let t = 0, p = 0;
+        for (let d = 1; d <= 7; d++) { const s = _mDayStats(d); t += s.t; p += s.p; }
+        $id('m-stats').innerHTML = `<b>${p}</b>/${t} postados`;
+    }
+
+    function _mRenderDays() {
+        let h = '';
+        for (let d = 1; d <= 7; d++) {
+            const s = _mDayStats(d);
+            const cls = (d === _mDay ? ' active' : '') + (s.t > 0 && s.p === s.t ? ' done' : '');
+            h += `<button class="m-pill${cls}" onclick="mcal_selectDay(${d})">Dia ${d}<small>${s.t ? `${s.p}/${s.t}` : '—'}</small></button>`;
+        }
+        $id('m-days').innerHTML = h;
+        const act = $id('m-days').querySelector('.active');
+        if (act && act.scrollIntoView) act.scrollIntoView({ inline: 'center', block: 'nearest' });
+    }
+
+    function _mRenderAccFilter() {
+        if (_mAcc >= calData.accounts.length) _mAcc = -1;
+        let h = `<button class="m-pill m-chipfilter${_mAcc === -1 ? ' active' : ''}" onclick="mcal_selectAcc(-1)">Todas</button>`;
+        calData.accounts.forEach((a, i) => {
+            h += `<button class="m-pill m-chipfilter${_mAcc === i ? ' active' : ''}" onclick="mcal_selectAcc(${i})">${_e(a)}</button>`;
+        });
+        $id('m-accfilter').innerHTML = h;
+    }
+
+    function _mChip(d, ai, ci, it) {
+        const col = _prodColor(it.product), bg = _fmtColor(it.product, it.format);
+        const sub = [];
+        if (it.postedAt) sub.push(`<span class="cal-chip-time" onclick="cal_openEditTime(${d},${ai},${ci})" title="Corrigir horário">✓ ${_e(it.postedAt)}</span>`);
+        if (it.note) sub.push(`<span class="m-chip-note">${_e(it.note)}</span>`);
+        return `<div class="cal-chip m-chip${it.posted ? ' posted' : ''}">
+            <div class="m-check-hit" onclick="cal_togglePosted(${d},${ai},${ci})" role="button" aria-label="${it.posted ? 'Marcar como pendente' : 'Marcar como postado'}">
+                <div class="cal-chip-check${it.posted ? ' checked' : ''}"></div>
+            </div>
+            <div class="m-chip-main">
+                <div class="m-chip-line1">
+                    <span class="cal-chip-badge" style="background:${bg}">${_e(it.format)}</span>
+                    <span class="cal-chip-color" style="background:${col}"></span>
+                    <span class="m-chip-name">${_e(it.product)} ${_e(it.format)}${_e(it.version)}</span>
+                </div>
+                ${sub.length ? `<div class="m-chip-sub">${sub.join('')}</div>` : ''}
+            </div>
+            <button class="cal-chip-edit" onclick="cal_openEdit(${d},${ai},${ci})" aria-label="Editar">✎</button>
+        </div>`;
+    }
+
+    function _mRenderBody() {
+        let h = '';
+        calData.accounts.forEach((acc, ai) => {
+            if (_mAcc !== -1 && _mAcc !== ai) return;
+            const items = _peek(_mDay, ai);
+            const done = items.filter(it => it.posted).length;
+            h += `<section class="m-acc">
+                <div class="m-acc-head"><span class="m-acc-name">${_e(acc)}</span>
+                    <span class="m-acc-prog${items.length && done === items.length ? ' all' : ''}">${items.length ? `${done}/${items.length}` : 'vazio'}</span></div>
+                <div class="m-acc-list">${items.length ? items.map((it, ci) => _mChip(_mDay, ai, ci, it)).join('') : '<div class="m-empty">Nenhum vídeo neste dia.</div>'}</div>
+                <button class="cal-btn-add-chip m-add" onclick="cal_openAdd(${_mDay},${ai})">+ Adicionar vídeo</button>
+            </section>`;
+        });
+        $id('m-daybody').innerHTML = h || '<div class="m-empty" style="padding:20px 14px">Nenhuma conta cadastrada.</div>';
+    }
+
+    function _mRenderLegend() {
+        // _prodColor atribui a cor na primeira vez que um produto aparece: fazer isso
+        // aqui (no render) mantém o estado estável antes do sync tirar o "retrato".
+        let h = '';
+        calData.products.forEach(p => { h += `<div class="cal-legend-item"><div class="cal-legend-dot" style="background:${_prodColor(p.name)}"></div>${_e(p.name)}</div>`; });
+        const seen = new Set();
+        calData.products.forEach(p => {
+            (p.formats || []).forEach((f, fi) => {
+                const k = `${f.abbr}|${fi}`;
+                if (!seen.has(k)) { seen.add(k); h += `<div class="cal-legend-item"><span class="cal-legend-badge" style="background:${FMT_COLORS[fi]}">${_e(f.abbr)}</span>${_e(f.name)}</div>`; }
+            });
+        });
+        $id('cal-legendEl').innerHTML = h;
+    }
+
+    function _mRender() {
+        _mRenderLegend();   // primeiro: garante cores de todos os produtos
+        _mRenderStats(); _mRenderDays(); _mRenderAccFilter(); _mRenderBody();
+    }
+
+    function _mSelectDay(d) { _mDay = d; try { localStorage.setItem('mcal-day', String(d)); } catch (e) {} _mRenderDays(); _mRenderBody(); }
+    function _mSelectAcc(i) { _mAcc = i; _mRenderAccFilter(); _mRenderBody(); }
+    function _mShowView(v) {
+        _mView = v;
+        ['agenda', 'teste', 'mais'].forEach(n => {
+            $id('m-view-' + n).hidden = (n !== v);
+            $id('m-nav-' + n).classList.toggle('active', n === v);
+        });
+        window.scrollTo(0, 0);
+    }
+
+    // Vídeo pode ser movido de dia/conta pelo próprio modal (no desktop é arrastando).
+    function _popDayAcc(d, ai) {
+        const ds = $id('cal-fDay'), as = $id('cal-fAccount');
+        ds.innerHTML = [1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}"${n === d ? ' selected' : ''}>Dia ${n}</option>`).join('');
+        as.innerHTML = calData.accounts.map((a, i) => `<option value="${i}"${i === ai ? ' selected' : ''}>${_e(a)}</option>`).join('');
+    }
+
+    window.mcal_selectDay = _mSelectDay;
+    window.mcal_selectAcc = _mSelectAcc;
+    window.mcal_showView = _mShowView;
+    window.mcal_toast = _calToast;
+
+    // ── EXPOR para onclick ──
+    window.cal_getData  = ()  => calData;
+    window.cal_setData  = (d) => { calData = _calMigrate(d); };
+    window.cal_init               = _calRender;
+    window.cal_togglePosted       = _togglePosted;
+    window.cal_openAdd            = _openAdd;
+    window.cal_openEdit           = _openEdit;
+    window.cal_onProductChange    = _onProductChange;
+    window.cal_closeVideoModal    = _closeVideoModal;
+    window.cal_deleteVideo        = _deleteVideo;
+    window.cal_saveVideo          = _saveVideo;
+    window.cal_closeTimeModal     = _closeTimeModal;
+    window.cal_confirmPosted      = _confirmPosted;
+    window.cal_openConfirm        = _openConfirm;
+    window.cal_closeConfirm       = _closeConfirm;
+    window.cal_clearWeek          = _clearWeek;
+    window.cal_resetUsedHistory   = _resetUsedHistory;
+    window.cal_discardTest        = _discardTest;
+    window.cal_reactivateTest     = _reactivateTest;
+    window.cal_validateTest       = _validateTest;
+    window.cal_unvalidateTest     = _unvalidateTest;
+    window.cal_addToEsteira       = _addToEsteira;
+    window.cal_removeFromEsteira  = _removeFromEsteira;
+    window.cal_toggleEsteiraFromForm = _toggleEsteiraFromForm;
+    window.cal_pauseProduct       = _pauseProduct;
+    window.cal_reactivateFromPause = _reactivateFromPause;
+    window.cal_togglePausedSection = _togglePausedSection;
+    window.cal_toggleRowMenu      = _toggleRowMenu;
+    window.cal_toggleEsteira      = _toggleEsteira;
+    window.cal_openManageProducts = _openManageProducts;
+    window.cal_closeProdModal     = _closeProdModal;
+    window.cal_openProductForm    = _openProductForm;
+    window.cal_closeProductForm   = _closeProductForm;
+    window.cal_openFmtEdit        = _openFmtEdit;
+    window.cal_closeFmtEdit       = _closeFmtEdit;
+    window.cal_toggleVersion      = _toggleVersion;
+    window.cal_removeProduct         = _removeProduct;
+    window.cal_saveProduct        = _saveProduct;
+    window.cal_addTempFormat      = _addFmt;
+    window.cal_removeFmt          = _removeFmt;
+    window.cal_syncFmt            = _syncFmt;
+    window.cal_autoAbbr           = _autoAbbr;
+    window.cal_openManageAccounts = _openManageAccounts;
+    window.cal_closeAccModal      = _closeAccModal;
+    window.cal_addAccountFromManager = _addAccount;
+    window.cal_removeAccount      = _removeAccount;
+    window.cal_editAccountName    = _editAccountName;
+    window.cal_cancelEditAccount  = _cancelEditAccount;
+    window.cal_saveAccountName    = _saveAccountName;
+    window.cal_exportJSON         = _exportJSON;
+    window.cal_openEditTime       = _openEditTime;
+
+    // Painel de Histórico
+    window.cal_openHistory              = _openHistory;
+    window.cal_closeHistory             = _closeHistory;
+    window.cal_histBackdropClick        = _histBackdropClick;
+    window.cal_histRender               = _histRender;
+    window.cal_histOpenEdit             = _histOpenEdit;
+    window.cal_histCloseEdit            = _histCloseEdit;
+    window.cal_histSaveEdit             = _histSaveEdit;
+    window.cal_histOpenDeleteConfirm    = _histOpenDeleteConfirm;
+    window.cal_histCloseDeleteConfirm   = _histCloseDeleteConfirm;
+    window.cal_histConfirmDelete        = _histConfirmDelete;
+
+    // API interna de consulta ao Histórico (uso futuro: Termômetro de Vendas)
+    window.cal_getPostHistory              = _getPostHistory;
+    window.cal_getPostsByAccountProduct    = _getPostsByAccountProduct;
+    window.cal_getPostCountByAccountProduct = _getPostCountByAccountProduct;
+    window.cal_getLastPostByAccountProduct = _getLastPostByAccountProduct;
+    window.cal_getPostsWithinHours         = _getPostsWithinHours;
+})();
+</script>
+<script>
+function createCalSync(o) {
+    const T = o.transport;
+    const store = o.store || { get() { return null; }, set() {} };
+    const delay = (typeof o.debounceMs === 'number') ? o.debounceMs : 600;
+    const rev = x => (x && x._rev) || 0;
+    let base = 0, written = 0, lastJson = null;
+    let timer = null, writing = false, again = false, pending = null, started = false;
+    const status = (s, m) => { if (o.onStatus) o.onStatus(s, m); };
+    const busy = () => !!(o.isBusy && o.isBusy());
+    const snap = () => JSON.stringify(o.getLocal());
+    // lastJson === null => estado local ainda não foi confirmado na nuvem (força gravar)
+    const isDirty = () => lastJson === null ? true : snap() !== lastJson;
+
+    function adopt(remote, conflict) {
+        if (conflict && o.onConflict) { try { o.onConflict(o.getLocal()); } catch (e) { /* backup é melhor-esforço */ } }
+        base = written = rev(remote);
+        o.setLocal(remote);            // o host migra/persiste/re-renderiza
+        lastJson = snap();
+        store.set('base', String(base)); store.set('dirty', '0');
+    }
+    function onRemote(remote) {
+        if (!remote) return;
+        const r = rev(remote);
+        if (r <= base || r <= written) return;     // eco da nossa própria gravação, ou já adotado
+        if (busy()) { pending = remote; return; }  // modal aberto: não troca o chão debaixo do usuário
+        adopt(remote, isDirty());
+    }
+    function applyPending() {
+        if (pending && !busy()) { const p = pending; pending = null; onRemote(p); }
+    }
+    async function flush() {
+        if (writing) { again = true; return; }
+        if (!isDirty()) { store.set('dirty', '0'); status('synced'); return; }
+        const local = o.getLocal();
+        const nextRev = Math.max(rev(local), base) + 1;
+        writing = true; status('saving');
+        try {
+            local._rev = nextRev; written = nextRev;
+            if (o.persist) o.persist(local);
+            const json = JSON.stringify(local);          // também elimina valores undefined (o Firebase rejeita)
+            const res = await T.write(JSON.parse(json), base);
+            if (res.committed) {
+                base = nextRev; lastJson = json;
+                store.set('base', String(base)); store.set('dirty', '0');
+                status('synced');
+            } else {
+                written = base;
+                if (res.remote) adopt(res.remote, true);  // perdeu a corrida: a nuvem manda, a edição local vai pro backup
+                status('synced');
+            }
+        } catch (e) {
+            written = base; status('error', (e && e.message) || String(e));
+        } finally {
+            writing = false;
+            if (again) { again = false; flush(); }
+        }
+    }
+    function notifyLocalChange() {
+        store.set('dirty', '1'); status('pending');
+        clearTimeout(timer); timer = setTimeout(flush, delay);
+    }
+    // Chamar depois que o local já foi alinhado com a nuvem (remote), ou com
+    // {localIsDirty:true} quando o local tem edições que a nuvem ainda não viu.
+    function attach(remote, opts) {
+        opts = opts || {};
+        base = written = rev(remote);
+        lastJson = opts.localIsDirty ? null : snap();
+        store.set('base', String(base));
+        if (!started) {
+            started = true;
+            T.listen(onRemote);
+            if (!o.noTimers) setInterval(applyPending, 1000);
+        }
+        status('synced');
+    }
+    return { attach, notifyLocalChange, flush, adopt, applyPending, getBase: () => base, isDirty };
+}
+
+// Decisão ao abrir o app e ler a nuvem (usada pelo celular; pura, testada em Node).
+//   s = { remote, bound, dirty, base }
+//   bound: este aparelho já sincronizou com ESTA nuvem+perfil antes
+//   dirty: há edições locais (feitas offline) que a nuvem ainda não viu — só vale se bound
+//   base : versão (_rev) da nuvem na última sincronização
+// Retorna { action: 'wait-for-hub' | 'push-local' | 'adopt', backup: null | 'prebind' | 'conflict' }
+function planStartup(s) {
+    const rr = (s.remote && s.remote._rev) || 0;
+    if (!s.remote) return { action: s.dirty ? 'push-local' : 'wait-for-hub', backup: null };
+    if (s.dirty && rr === s.base) return { action: 'push-local', backup: null };   // offline editou, nuvem não mudou
+    return { action: 'adopt', backup: !s.bound ? 'prebind' : (s.dirty ? 'conflict' : null) };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MOBILE — pareamento com o Firebase do Hub + ligação do createCalSync.
+// Mesmo nó que o Hub usa: hub/<perfil>/calendario (concorrência por _rev).
+// ══════════════════════════════════════════════════════════════════════════
+(function () {
+    'use strict';
+    const K = { cfg: 'mcal-fbconfig', profile: 'mcal-profile', mode: 'mcal-mode', last: 'mcal-lastsync' };
+    const SDK = 'https://www.gstatic.com/firebasejs/12.13.0/';
+    const $ = id => document.getElementById(id);
+    const ls = {
+        get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+        set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage cheio/bloqueado */ } },
+        del(k) { try { localStorage.removeItem(k); } catch (e) { /* ok */ } },
+    };
+    const syncStore = { get: k => ls.get('mcal-sync-' + k), set: (k, v) => ls.set('mcal-sync-' + k, v) };
+
+    let sync = null, status = 'local', statusMsg = '', booting = false, retryTimer = null, activeProfile = '', activeHost = '';
+    const toast = m => { if (window.mcal_toast) window.mcal_toast(m); };
+    const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+    const modalOpen = () => !!document.querySelector('.cal-overlay.open, .cal-hist-backdrop.open');
+    const saveLocal = c => ls.set('tiktok-calendario', JSON.stringify(c));
+
+    // ── status ────────────────────────────────────────────────────────────
+    function setStatus(s, msg) {
+        status = s; statusMsg = msg || '';
+        const map = {
+            local: ['local', 'local'], connecting: ['saving', 'conectando…'], pending: ['saving', 'salvando…'],
+            saving: ['saving', 'salvando…'], synced: ['synced', 'sincronizado'], error: ['error', 'erro'], offline: ['error', 'offline'],
+        };
+        const [cls, txt] = map[s] || ['local', s];
+        $('m-dot').className = 'm-dot ' + cls;
+        $('m-synctxt').textContent = txt;
+        const mm = $('m-menu-sync');
+        if (mm) mm.textContent = s === 'local' ? 'Só neste aparelho' : (txt + (msg ? ' — ' + msg : ''));
+    }
+    function onSyncStatus(s, m) {
+        if (s === 'synced') ls.set(K.last, String(Date.now()));
+        setStatus(s, m);
+    }
+    function showBanner(t) { const b = $('m-banner'); b.textContent = t; b.hidden = false; }
+    function hideBanner() { $('m-banner').hidden = true; }
+
+    // ── ponte com o módulo do Calendário ──────────────────────────────────
+    // O módulo chama _calSyncNotify() a cada _calSave() (mesmo gancho do Hub).
+    window._calSyncNotify = function () {
+        syncStore.set('dirty', '1');
+        if (sync) sync.notifyLocalChange();
+        else if (ls.get(K.mode) === 'cloud') setStatus('offline', 'edição guardada; envia quando conectar');
+    };
+    function applyRemote(remote) {
+        cal_setData(remote);
+        saveLocal(cal_getData());
+        cal_init();
+        hideBanner();
+    }
+    function backup(key, local) {
+        try { ls.set(key, JSON.stringify({ at: Date.now(), data: local })); } catch (e) { /* melhor-esforço */ }
+    }
+    function conflictBackup(local) {
+        backup('mcal-conflict-backup', local);
+        toast('⚠️ Outro aparelho atualizou a agenda — sua última alteração não entrou (guardada em backup).');
+    }
+
+    // ── Firebase ──────────────────────────────────────────────────────────
+    async function loadSdk() {
+        const [app, dbm] = await Promise.all([import(SDK + 'firebase-app.js'), import(SDK + 'firebase-database.js')]);
+        return Object.assign({}, app, dbm);
+    }
+    function parseFirebaseConfig(text) {
+        let s = String(text || '').trim();
+        const m = s.match(/firebaseConfig\s*=\s*(\{[\s\S]*?\})\s*;?/);
+        if (m) s = m[1]; else { const m2 = s.match(/\{[\s\S]*\}/); if (m2) s = m2[0]; }
+        s = s.replace(/^\s*\/\/.*$/gm, '')                             // comentários de linha
+             .replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":')   // chaves sem aspas
+             .replace(/'([^'\\]*)'/g, '"$1"')                          // aspas simples
+             .replace(/,\s*([}\]])/g, '$1');                           // vírgula sobrando
+        let cfg;
+        try { cfg = JSON.parse(s); } catch (e) { throw new Error('Não entendi esse firebaseConfig. Cole o bloco inteiro, como aparece no Firebase.'); }
+        if (!cfg.apiKey || !cfg.databaseURL) throw new Error('Faltou apiKey ou databaseURL no firebaseConfig.');
+        return cfg;
+    }
+
+    // Link de pareamento gerado pelo Hub (📱 Link do app de celular): .../#pair=<base64url({c:config,p:perfil})>
+    function pairFromText(text) {
+        const m = String(text || '').match(/pair=([A-Za-z0-9_\-]+)/);
+        if (!m) return null;
+        try {
+            let b = m[1].replace(/-/g, '+').replace(/_/g, '/');
+            while (b.length % 4) b += '=';
+            const json = new TextDecoder().decode(Uint8Array.from(atob(b), ch => ch.charCodeAt(0)));
+            const o = JSON.parse(json);
+            return (o && o.c && o.p) ? o : null;
+        } catch (e) { return null; }
+    }
+
+    // Conecta, lê a nuvem e reconcilia com o que está no aparelho. Lança erro se falhar.
+    async function connect(cfg, profile) {
+        const F = await withTimeout(loadSdk(), 20000, 'Não consegui carregar o Firebase (sem internet?).');
+        let app; try { app = F.getApp('mcal'); } catch (e) { app = F.initializeApp(cfg, 'mcal'); }
+        const db = F.getDatabase(app);
+        const root = 'hub/' + profile.replace(/[.#$\[\]\/]/g, '_');
+        const calRef = F.ref(db, root + '/calendario');
+        const transport = {
+            get: () => F.get(calRef).then(s => s.val()),
+            listen: cb => F.onValue(calRef, s => cb(s.val()), err => setStatus('error', (err && err.message) || 'sem permissão')),
+            write: async (obj, baseRev) => {
+                const res = await F.runTransaction(calRef, cur => {
+                    if (cur && (cur._rev || 0) !== baseRev) return;   // outro aparelho gravou antes: aborta
+                    return obj;
+                });
+                return { committed: res.committed, remote: res.snapshot.val() };
+            },
+        };
+        const remote = await withTimeout(transport.get(), 15000, 'A nuvem não respondeu.');
+        activeProfile = profile; activeHost = (cfg.databaseURL || '').replace(/^https?:\/\//, '');
+        reconcile(transport, remote, cfg, profile);
+        return { empty: !remote };
+    }
+
+    function reconcile(transport, remote, cfg, profile) {
+        const bindingKey = JSON.stringify([cfg.databaseURL, profile]);
+        const bound = syncStore.get('bound') === bindingKey;       // este aparelho já sincronizou com ESTA nuvem+perfil
+        const dirty = bound && syncStore.get('dirty') === '1';       // edições feitas offline ainda não enviadas
+        const base = bound ? (parseInt(syncStore.get('base'), 10) || 0) : 0;
+        const local = cal_getData();
+        sync = createCalSync({
+            transport,
+            getLocal: () => cal_getData(),
+            setLocal: applyRemote,
+            persist: saveLocal,
+            isBusy: modalOpen,
+            onConflict: conflictBackup,
+            onStatus: onSyncStatus,
+            store: syncStore,
+        });
+        const plan = planStartup({ remote, bound, dirty, base });   // decisão pura (testada em Node)
+        syncStore.set('bound', bindingKey);
+        if (plan.action === 'wait-for-hub') {
+            sync.attach(null, { localIsDirty: false });
+            showBanner('Ainda não há calendário na nuvem para este perfil. Abra o Hub no PC (com internet) para enviar a agenda — ela aparece aqui sozinha. Se o nome do perfil estiver errado, ajuste em ☁️ Sincronização.');
+        } else if (plan.action === 'push-local') {
+            sync.attach(remote || null, { localIsDirty: true });
+            sync.notifyLocalChange();
+        } else {
+            if (plan.backup === 'prebind') backup('mcal-prebind-backup', local);   // 1ª conexão: nuvem manda, guarda o que havia aqui
+            else if (plan.backup === 'conflict') conflictBackup(local);              // nuvem avançou e havia edição offline
+            applyRemote(remote);
+            sync.attach(remote);
+        }
+    }
+
+    async function startCloud() {
+        if (booting || sync) return;
+        const cfgText = ls.get(K.cfg), profile = ls.get(K.profile);
+        if (!cfgText || !profile) return;
+        booting = true; setStatus('connecting');
+        try {
+            await connect(JSON.parse(cfgText), profile);
+            clearTimeout(retryTimer);
+        } catch (e) {
+            sync = null; setStatus('offline', e && e.message);
+            clearTimeout(retryTimer); retryTimer = setTimeout(startCloud, 20000);
+        } finally { booting = false; }
+    }
+
+    // ── telas: pareamento / sincronização ─────────────────────────────────
+    function openSetup(prefill) {
+        $('m-setup-cfg').value = ''; $('m-setup-err').textContent = '';
+        $('m-setup-profile').value = prefill || ls.get(K.profile) || '';
+        $('m-setup').classList.add('open');
+    }
+    window.mcal_saveSetup = async function () {
+        const err = $('m-setup-err'), btn = $('m-setup-go');
+        err.textContent = '';
+        let cfg;
+        const text = $('m-setup-cfg').value.trim();
+        let profile = $('m-setup-profile').value.trim();
+        try {
+            const pair = pairFromText(text);                                   // colou o link do Hub
+            if (pair) { cfg = parseFirebaseConfig(JSON.stringify(pair.c)); profile = String(pair.p); $('m-setup-profile').value = profile; }
+            else {
+                if (!profile) throw new Error('Informe o nome do perfil (o mesmo que aparece no Hub).');
+                if (text) cfg = parseFirebaseConfig(text);
+                else if (ls.get(K.cfg)) cfg = JSON.parse(ls.get(K.cfg));        // reconfigurando só o perfil
+                else throw new Error('Cole o link do Hub (ou o firebaseConfig).');
+            }
+        } catch (e) { err.textContent = e.message; return; }
+        btn.disabled = true; btn.textContent = 'Conectando…';
+        try {
+            sync = null;
+            const r = await connect(cfg, profile);
+            ls.set(K.cfg, JSON.stringify(cfg)); ls.set(K.profile, profile); ls.set(K.mode, 'cloud');
+            $('m-setup').classList.remove('open');
+            toast(r.empty ? 'Conectado, mas ainda sem agenda na nuvem.' : '✓ Conectado — agenda sincronizada!');
+        } catch (e) {
+            sync = null; err.textContent = 'Não conectou: ' + ((e && e.message) || e);
+        } finally { btn.disabled = false; btn.textContent = 'Conectar'; }
+    };
+    window.mcal_useLocal = function () { ls.set(K.mode, 'local'); $('m-setup').classList.remove('open'); setStatus('local'); };
+    window.mcal_openSync = function () {
+        const last = parseInt(ls.get(K.last), 10);
+        const mode = ls.get(K.mode) === 'cloud';
+        $('m-synckv').innerHTML = mode
+            ? `<div>Estado: <b>${status === 'synced' ? 'sincronizado' : status}</b>${statusMsg ? ' — ' + statusMsg.replace(/</g, '&lt;') : ''}</div>
+               <div>Perfil: <b>${(activeProfile || ls.get(K.profile) || '—').replace(/</g, '&lt;')}</b></div>
+               <div>Nuvem: <b>${(activeHost || '—').replace(/</g, '&lt;')}</b></div>
+               <div>Última sincronização: <b>${last ? new Date(last).toLocaleString('pt-BR') : '—'}</b></div>
+               <div>Versão da agenda: <b>${sync ? sync.getBase() : '—'}</b></div>`
+            : `<div>Modo: <b>só neste aparelho</b> — nada é enviado pra nuvem.</div>`;
+        $('m-syncOverlay').classList.add('open');
+    };
+    window.mcal_closeSync = function (e) {
+        if (e && e.target !== $('m-syncOverlay')) return;
+        $('m-syncOverlay').classList.remove('open');
+    };
+    window.mcal_reconfigure = function () { $('m-syncOverlay').classList.remove('open'); openSetup(); };
+    window.mcal_disconnect = function () {
+        if (!confirm('Desconectar este aparelho da nuvem? A agenda continua salva aqui, mas deixa de sincronizar.')) return;
+        [K.cfg, K.profile, K.mode, K.last].forEach(ls.del);
+        ['bound', 'base', 'dirty'].forEach(k => ls.del('mcal-sync-' + k));
+        location.reload();
+    };
+    window.mcal_toggleTheme = function () {
+        const dark = !document.documentElement.classList.contains('dark');
+        document.documentElement.classList.toggle('dark', dark);
+        ls.set('mcal-theme', dark ? 'dark' : 'light');
+        const mt = document.querySelector('meta[name=theme-color]'); if (mt) mt.content = dark ? '#0f1117' : '#ffffff';
+    };
+    window.mcal_forceReload = async function () {
+        try {
+            if ('serviceWorker' in navigator) (await navigator.serviceWorker.getRegistrations()).forEach(r => r.unregister());
+            if (window.caches) (await caches.keys()).forEach(k => caches.delete(k));
+        } catch (e) { /* segue pro reload */ }
+        location.reload();
+    };
+
+    // ── ciclo de vida ─────────────────────────────────────────────────────
+    window.addEventListener('online', () => { if (sync) sync.flush(); else startCloud(); });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') return;
+        if (sync) sync.flush(); else if (ls.get(K.mode) === 'cloud') startCloud();
+    });
+
+    function boot() {
+        cal_init();                                   // já mostra o que está salvo no aparelho
+        const mode = ls.get(K.mode);
+        const hashPair = pairFromText(location.hash);
+        if (hashPair) {                               // abriu o link de pareamento do Hub: conecta sozinho
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ok */ }
+            $('m-setup').classList.add('open');
+            $('m-setup-cfg').value = JSON.stringify(hashPair.c);
+            $('m-setup-profile').value = String(hashPair.p);
+            window.mcal_saveSetup();
+        } else if (mode === 'cloud' && ls.get(K.cfg)) startCloud();
+        else if (mode === 'local') setStatus('local');
+        else openSetup();
+        if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+            navigator.serviceWorker.register('sw.js').catch(() => { /* sem offline-shell, o resto funciona */ });
+        }
+    }
+    boot();
+})();
+
+</script>
+</body>
+</html>

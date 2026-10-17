@@ -1,0 +1,15 @@
+# Agenda TikTok (celular) — compose pra VPS Hostinger com Traefik em modo host
+# (mesmo padrão do workout-coach: o Traefik emite o HTTPS via Let's Encrypt).
+# AGENDA_HOST e REPO_URL são definidos no projeto Docker (variáveis de ambiente), não aqui.
+# Exemplo: AGENDA_HOST=agenda.seudominio.com
+#          REPO_URL=https://github.com/<usuario>/<repo-publico>.git#main
+services:
+  agenda:
+    build: ${REPO_URL}
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.agenda.rule=Host(`${AGENDA_HOST}`)
+      - traefik.http.routers.agenda.entrypoints=websecure
+      - traefik.http.routers.agenda.tls.certresolver=letsencrypt
+      - traefik.http.services.agenda.loadbalancer.server.port=80
