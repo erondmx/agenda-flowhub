@@ -284,6 +284,13 @@ try { if (localStorage.getItem('mcal-theme') !== 'light') document.documentEleme
         .cal-test-validate-btn:hover { background: var(--green); color: #fff; }
         .cal-test-decision-row .cal-test-discard-btn { flex: 1; }
         .cal-esteira { margin-top: 16px; }
+        .cal-esteira-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .cal-clear-row { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+        .cal-clear-btn {
+            background: none; border: 1px solid var(--red); color: var(--red); border-radius: 6px;
+            padding: 4px 10px; font-size: 0.76em; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap;
+        }
+        .cal-clear-btn:hover { background: var(--red); color: #fff; }
         .cal-esteira-toggle {
             background: none; border: none; color: var(--text-muted); font-size: 0.85em; font-weight: 700;
             cursor: pointer; padding: 4px 0; font-family: inherit;
@@ -979,7 +986,8 @@ html.dark .m-banner { color: #f4d03f; }
         } else if (pendingNames.length === 0) {
             el.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Nenhum produto pendente de decisão no momento.</p>';
         } else {
-            el.innerHTML = pendingNames.map(name => {
+            const clearRow = `<div class="cal-clear-row"><button class="cal-clear-btn" onclick="cal_clearList('teste')" title="Remove todos os cards desta lista e zera a contagem deles">🗑️ Apagar todos (${pendingNames.length})</button></div>`;
+            el.innerHTML = clearRow + pendingNames.map(name => {
                 const count = counts[name];
                 const status = _testStatus(name);
                 const discarded = status === 'discarded';
@@ -1031,7 +1039,8 @@ html.dark .m-banner { color: #f4d03f; }
         if (!el) return;
         let h = '';
         if (validatedNames.length) {
-            h += `<button class="cal-esteira-toggle" onclick="cal_toggleEsteira()">${_esteiraOpen ? '▼' : '▶'} ✅ Esteira Ativa (${validatedNames.length})</button>`;
+            h += `<div class="cal-esteira-head"><button class="cal-esteira-toggle" onclick="cal_toggleEsteira()">${_esteiraOpen ? '▼' : '▶'} ✅ Esteira Ativa (${validatedNames.length})</button>
+                <button class="cal-clear-btn" onclick="cal_clearList('esteira')" title="Remove todos da Esteira Ativa e zera a contagem deles">🗑️ Apagar todos</button></div>`;
             if (_esteiraOpen) {
                 h += '<div class="cal-esteira-list">' + validatedNames.map((name, i) => _esteiraItemHtml(name, counts[name], `cal-menu-va-${i}`, [
                     { label: '⏸️ Pausar produto', action: `cal_pauseProduct('${_e(name)}')` },
@@ -1041,7 +1050,8 @@ html.dark .m-banner { color: #f4d03f; }
             }
         }
         if (pausedNames.length) {
-            h += `<button class="cal-esteira-toggle" onclick="cal_togglePausedSection()">${_pausedOpen ? '▼' : '▶'} ⏸️ Produtos Pausados (${pausedNames.length})</button>`;
+            h += `<div class="cal-esteira-head"><button class="cal-esteira-toggle" onclick="cal_togglePausedSection()">${_pausedOpen ? '▼' : '▶'} ⏸️ Produtos Pausados (${pausedNames.length})</button>
+                <button class="cal-clear-btn" onclick="cal_clearList('pausados')" title="Remove todos os pausados e zera a contagem deles">🗑️ Apagar todos</button></div>`;
             if (_pausedOpen) {
                 h += '<div class="cal-esteira-list">' + pausedNames.map((name, i) => _esteiraItemHtml(name, counts[name], `cal-menu-vp-${i}`, [
                     { label: '▶️ Reativar na Esteira', action: `cal_reactivateFromPause('${_e(name)}')` },
@@ -1089,6 +1099,40 @@ html.dark .m-banner { color: #f4d03f; }
     function _toggleEsteira() {
         _esteiraOpen = !_esteiraOpen;
         _rTestGrid();
+    }
+    // Apagar das listas DE VEZ (Teste de Produtos / Esteira Ativa / Pausados): remove os
+    // produtos da lista e zera a contagem x/10 e o status deles. Histórico permanente de
+    // postagens e cadastro do produto NÃO são tocados. Guarda um backup local do que saiu
+    // (localStorage "calendario-clear-backup") — é só rede de segurança, não há botão de desfazer.
+    function _clearList(kind) {
+        const counts = calData.testCounts || {};
+        const names = Object.keys(counts).filter(n => counts[n] > 0);   // mesmo universo do _rTestGrid
+        const sel = names.filter(n => {
+            const s = _testStatus(n);
+            if (kind === 'teste') return s !== 'validated' && s !== 'paused';  // pendentes + descartados
+            if (kind === 'esteira') return s === 'validated';
+            return s === 'paused';
+        });
+        if (!sel.length) { _calToast('Nada para apagar.'); return; }
+        const label = { teste: 'Teste de Produtos', esteira: 'Esteira Ativa', pausados: 'Produtos Pausados' }[kind];
+        if (!confirm(`Apagar TODOS os ${sel.length} produtos de "${label}"?\n\nA contagem x/10 e o status deles serão zerados e eles saem da lista${kind === 'teste' ? '' : ' e do Termômetro'}.\nO histórico de postagens e o cadastro dos produtos ficam.\n\nNão dá pra desfazer a contagem.`)) return;
+        try {
+            let log = []; try { log = JSON.parse(localStorage.getItem('calendario-clear-backup') || '[]'); } catch (e) { log = []; }
+            if (!Array.isArray(log)) log = [];
+            log.push({
+                at: Date.now(), kind,
+                items: sel.map(n => ({ name: n, count: counts[n], status: (calData.testStatus && calData.testStatus[n]) || null })),
+            });
+            localStorage.setItem('calendario-clear-backup', JSON.stringify(log.slice(-10)));   // guarda os 10 últimos
+        } catch (e) { /* sem espaço: segue sem backup */ }
+        sel.forEach(n => {
+            delete calData.testCounts[n];
+            if (calData.testStatus) delete calData.testStatus[n];
+            if (calData.discardedProducts) delete calData.discardedProducts[n];  // legado: senão o _calMigrate "ressuscita" o descarte
+        });
+        _calSave(); _rTestGrid(); _rProdList();
+        if (typeof window.vtRender === 'function') window.vtRender();
+        _calToast(`${sel.length} produto${sel.length !== 1 ? 's' : ''} apagado${sel.length !== 1 ? 's' : ''} de "${label}".`);
     }
     let _pausedOpen = false;
     function _togglePausedSection() {
@@ -2138,6 +2182,7 @@ html.dark .m-banner { color: #f4d03f; }
     window.cal_togglePausedSection = _togglePausedSection;
     window.cal_toggleRowMenu      = _toggleRowMenu;
     window.cal_toggleEsteira      = _toggleEsteira;
+    window.cal_clearList          = _clearList;
     window.cal_openManageProducts = _openManageProducts;
     window.cal_closeProdModal     = _closeProdModal;
     window.cal_openProductForm    = _openProductForm;

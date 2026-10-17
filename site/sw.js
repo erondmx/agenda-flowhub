@@ -1,5 +1,5 @@
 // Service worker do Calendário (celular). Gerado por build_mobile.py — não editar sw.js direto.
-const VERSION = 'bd806518f7';
+const VERSION = 'b979cd0451';
 const CACHE = 'mcal-' + VERSION;
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
