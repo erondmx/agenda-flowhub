@@ -206,6 +206,7 @@ try { if (localStorage.getItem('mcal-theme') !== 'light') document.documentEleme
         .cal-drive-status { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
         .cal-drive-status:empty { display: none; }
         .cal-drive-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .cal-drive-run { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 12px; color: var(--text-muted); }
         .cal-drive-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.45; opacity: .85; }
         .cal-chip-open { flex-shrink: 0; text-decoration: none; color: var(--accent); font-weight: 800; font-size: 15px; padding: 0 4px; line-height: 1; }
         .cal-chip-open:hover { color: var(--green); }
@@ -657,6 +658,10 @@ html.dark .m-banner { color: #f4d03f; }
                 <div id="cal-prodListView">
                     <h2>Gerenciar Produtos</h2>
                     <div id="cal-productsList" style="margin-bottom:16px;max-height:320px;overflow-y:auto"></div>
+                    <div class="cal-drive-run">
+                        <button type="button" class="cal-btn cal-btn-sm" onclick="cal_driveSetRunUrl()" title="Configuração única, vale para todos os produtos e aparelhos. Link gerado pelo Apps Script (função linkLeituraImediata)">⚡ Leitura imediata das pastas</button>
+                        <span id="cal-driveRunState"></span>
+                    </div>
                     <div style="display:flex;gap:8px;justify-content:space-between">
                         <button class="cal-btn cal-btn-primary" onclick="cal_openProductForm(-1)">+ Adicionar Produto</button>
                         <button class="cal-btn cal-btn-primary" onclick="cal_closeProdModal()">Fechar</button>
@@ -678,7 +683,6 @@ html.dark .m-banner { color: #f4d03f; }
                         <div id="cal-fpDriveStatus" class="cal-drive-status"></div>
                         <div class="cal-drive-actions">
                             <button type="button" class="cal-btn cal-btn-sm" onclick="cal_driveReadNow()" title="Manda o Apps Script ler a pasta agora, sem esperar os 10 minutos">🔄 Ler pasta agora</button>
-                            <button type="button" class="cal-btn cal-btn-sm" onclick="cal_driveSetRunUrl()" title="Link gerado pelo Apps Script (função linkLeituraImediata)">⚡ Link de leitura imediata</button>
                         </div>
                         <div class="cal-drive-hint">Com a pasta ligada, as versões são os arquivos que estão nela (F1, L3, "Fábrica 2"...). Apagou o vídeo depois de postar? Ele sai da fila. Sem pasta, vale o número de versões abaixo.</div>
                     </div>
@@ -1776,8 +1780,12 @@ html.dark .m-banner { color: #f4d03f; }
     }
 
     // ── PRODUTOS ──
+    function _driveRunState() {
+        const s=$id('cal-driveRunState'); if(!s) return;
+        s.textContent = calData.driveRunUrl ? '✓ configurada — vale para todos os produtos' : 'não configurada (as pastas são lidas a cada ~10 min)';
+    }
     function _openManageProducts() {
-        _rProdList(); $id('cal-prodListView').style.display=''; $id('cal-prodFormView').style.display='none';
+        _driveRunState(); _rProdList(); $id('cal-prodListView').style.display=''; $id('cal-prodFormView').style.display='none';
         $id('cal-productsOverlay').classList.add('open');
     }
     function _closeProdModal(e) {
@@ -2076,12 +2084,12 @@ html.dark .m-banner { color: #f4d03f; }
         const t=v.trim();
         if(t && !_driveRunUrlOk(t)){ _calToast('Link inválido: tem que terminar em /exec?k=… (rode linkLeituraImediata no Apps Script).'); return; }
         if(t) calData.driveRunUrl=t; else delete calData.driveRunUrl;
-        _calSave();
+        _calSave(); _driveRunState();
         _calToast(t?'Link de leitura imediata salvo (vale pra todos os aparelhos).':'Leitura imediata desligada.');
     }
     async function _driveReadNow(auto) {
         const url=calData.driveRunUrl;
-        if(!url){ if(!auto) _calToast('Falta o link de leitura imediata (botão ⚡). Sem ele a leitura roda a cada ~10 min.'); return; }
+        if(!url){ if(!auto) _calToast('Falta o link de leitura imediata (Gerenciar Produtos → ⚡). Sem ele a leitura roda a cada ~10 min.'); return; }
         if(!auto){   // botão manual: a pasta digitada tem que já estar salva no produto (o script lê o que está na nuvem)
             const p=editProdIdx!==-1?calData.products[editProdIdx]:null, did=driveFolderId($id('cal-fpDrive').value);
             if(!p || !did || !p.driveFolder || p.driveFolder.id!==did){ _calToast('Salve o produto primeiro, depois peça a leitura.'); return; }
