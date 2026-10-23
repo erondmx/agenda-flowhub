@@ -203,6 +203,11 @@ try { if (localStorage.getItem('mcal-theme') !== 'light') document.documentEleme
         .cal-fmtedit-badge.manual { background: rgba(52,152,219,.2); color: #64b5f6; }
         .cal-fmtedit-badge.free   { background: rgba(0,0,0,.06); color: #7b80a0; }
         html.dark .cal-fmtedit-badge.free { background: rgba(255,255,255,.06); }
+        .cal-drive-status { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
+        .cal-drive-status:empty { display: none; }
+        .cal-drive-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.45; opacity: .85; }
+        .cal-chip-open { flex-shrink: 0; text-decoration: none; color: var(--accent); font-weight: 800; font-size: 15px; padding: 0 4px; line-height: 1; }
+        .cal-chip-open:hover { color: var(--green); }
         .cal-fmtedit-bulk { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
         .cal-fmtedit-list { max-height: 320px; overflow-y: auto; margin-bottom: 16px; }
         .btn-fmtedit-open {
@@ -666,6 +671,12 @@ html.dark .m-banner { color: #f4d03f; }
                         <label>Status Operacional</label>
                         <button type="button" class="cal-btn cal-esteira-form-btn" id="cal-fp-esteira-btn" onclick="cal_toggleEsteiraFromForm()" style="width:100%"></button>
                     </div>
+                    <div class="cal-form-group" id="cal-fp-drive-group">
+                        <label>Pasta do Google Drive (opcional)</label>
+                        <input type="text" class="cal-inp" id="cal-fpDrive" placeholder="Cole o link da pasta com os vídeos deste produto" autocomplete="off" autocapitalize="off" spellcheck="false">
+                        <div id="cal-fpDriveStatus" class="cal-drive-status"></div>
+                        <div class="cal-drive-hint">Com a pasta ligada, as versões são os arquivos que estão nela (F1, L3, "Fábrica 2"...). Apagou o vídeo depois de postar? Ele sai da fila. Sem pasta, vale o número de versões abaixo.</div>
+                    </div>
                     <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
                         <label style="font-size:12px;color:#7b80a0;font-weight:600;text-transform:uppercase;letter-spacing:.04em;flex:1">Formatos</label>
                         <span style="font-size:11px;color:#7b80a0">Nome · Abrev · Versões</span>
@@ -902,10 +913,77 @@ html.dark .m-banner { color: #f4d03f; }
         const p = _prodObj(product); if (!p) return '#888';
         const i = (p.formats||[]).findIndex(f=>f.abbr===abbr); return FMT_COLORS[i>=0?i:0];
     }
+    // ── PASTA DO DRIVE (índice gravado pelo Apps Script em hub/<perfil>/driveIndex) ──
+    // Produto com pasta ligada: as versões que EXISTEM são as dos arquivos que estão na pasta
+    // (quem apaga o vídeo depois de postar tira a versão da fila). Sem pasta, ou com leitura
+    // ainda indisponível/com erro, vale a contagem numérica de sempre (1..versões).
+    let driveIndex = (function(){ try { return JSON.parse(localStorage.getItem('calendario-drive-index')) || {}; } catch(e){ return {}; } })();
+    const _driveMemo = {};
+    function _driveEntry(p) {
+        if (!p || !p.driveFolder || !p.driveFolder.id) return null;
+        const e = driveIndex && driveIndex[p.id];
+        if (!e || e.error || e.folderId !== p.driveFolder.id) return null;   // trocou de pasta: leitura antiga não vale
+        return e;
+    }
+    function _driveBuilt(p) {
+        const e = _driveEntry(p); if (!e) return null;
+        const sig = [e.scannedAt, e.hash, (p.formats||[]).map(f=>f.abbr+':'+f.name).join(',')].join('|');
+        const c = _driveMemo[p.id];
+        if (c && c.sig === sig) return c.built;
+        const files = Array.isArray(e.files) ? e.files : Object.values(e.files || {});
+        const built = driveBuildVersions(files, p.formats || []);
+        _driveMemo[p.id] = { sig, built };
+        return built;
+    }
+    // números de versão que existem de um formato (pasta ligada = arquivos; senão 1..versões)
+    function _versionNums(p, f) {
+        const b = _driveBuilt(p);
+        if (b) return (b.byFmt[f.abbr] || []).slice();
+        const out = []; for (let v = 1; v <= f.versions; v++) out.push(v);
+        return out;
+    }
+    // pro "Editar uso": com pasta ligada, também mostra versões que já saíram da pasta mas
+    // continuam no histórico ou no calendário (senão não teria como liberá-las)
+    function _editNums(p, f) {
+        const base = _versionNums(p, f);
+        if (!_driveBuilt(p)) return base;
+        const set = new Set(base);
+        ((calData.usedHistory||{})[p.name]||[]).forEach(k => { const [a, n] = String(k).split('|'); if (a === f.abbr && +n > 0) set.add(+n); });
+        Object.values(calData.schedule).forEach(arr => arr.forEach(it => { if (it.product === p.name && it.format === f.abbr && +it.version > 0) set.add(+it.version); }));
+        return Array.from(set).sort((a, b) => a - b);
+    }
+    function _driveFileFor(p, format, version) {
+        const b = _driveBuilt(p);
+        return b ? (b.map[format + '|' + version] || null) : null;
+    }
+    function _driveLink(it) {
+        const fl = _driveFileFor(_prodObj(it.product), it.format, it.version);
+        return (fl && fl.url) ? `<a class="cal-chip-open" href="${_e(fl.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Abrir o vídeo no Drive">↗</a>` : '';
+    }
+    function _driveAgo(ts) {
+        if (!ts) return '';
+        const min = Math.max(0, Math.round((Date.now() - ts) / 60000));
+        if (min < 1) return 'agora há pouco';
+        if (min < 60) return `há ${min} min`;
+        const h = Math.round(min / 60);
+        return h < 48 ? `há ${h} h` : `há ${Math.round(h / 24)} dias`;
+    }
+    // texto de status mostrado no formulário do produto
+    function _driveStatusHtml(p) {
+        if (!p || !p.driveFolder || !p.driveFolder.id) return '';
+        const e = driveIndex && driveIndex[p.id];
+        if (!e || e.folderId !== p.driveFolder.id) return '⏳ Aguardando a primeira leitura da pasta (o Apps Script lê a cada ~10 min).';
+        if (e.error) return `⚠️ ${_e(e.error)}`;
+        const b = _driveBuilt(p);
+        const bits = [`✓ ${b.recognized} versão(ões) reconhecida(s) em ${b.total} arquivo(s)`];
+        if (b.unrecognized.length) bits.push(`${b.unrecognized.length} sem sigla+número (${_e(b.unrecognized.slice(0, 3).join(', '))}${b.unrecognized.length > 3 ? '…' : ''})`);
+        if (b.duplicates.length) bits.push(`${b.duplicates.length} repetido(s)`);
+        return bits.join(' · ') + ` · lido ${_driveAgo(e.scannedAt)}`;
+    }
     function _pool(name) {
         const p = _prodObj(name); if (!p) return [];
         const pool = [];
-        (p.formats||[]).forEach(f=>{ for(let v=1;v<=f.versions;v++) pool.push({format:f.abbr,formatName:f.name,version:String(v)}); });
+        (p.formats||[]).forEach(f=>{ _versionNums(p, f).forEach(v=>pool.push({format:f.abbr,formatName:f.name,version:String(v)})); });
         return pool;
     }
     function _usedKeys(name) {
@@ -1238,7 +1316,7 @@ html.dark .m-banner { color: #f4d03f; }
                         <div class="cal-chip-check${it.posted?' checked':''}" onclick="cal_togglePosted(${d},${ai},${ci})" title="${it.posted?'Marcar como pendente':'Marcar como postado'}"></div>
                         <span class="cal-chip-badge" style="background:${bg}">${_e(it.format)}</span>
                         <span class="cal-chip-color" style="background:${col}"></span>
-                        <span class="cal-chip-name">${_e(it.product)} ${_e(it.format)}${_e(it.version)}${it.postedAt?`<span class="cal-chip-time" onclick="event.stopPropagation();cal_openEditTime(${d},${ai},${ci})" title="Corrigir horário">· ${_e(it.postedAt)}</span>`:''}</span>
+                        <span class="cal-chip-name">${_e(it.product)} ${_e(it.format)}${_e(it.version)}${it.postedAt?`<span class="cal-chip-time" onclick="event.stopPropagation();cal_openEditTime(${d},${ai},${ci})" title="Corrigir horário">· ${_e(it.postedAt)}</span>`:''}</span>${_driveLink(it)}
                         ${it.note?`<span class="cal-chip-note" title="${_e(it.note)}">${_e(it.note)}</span>`:''}
                         <button class="cal-chip-edit" onclick="cal_openEdit(${d},${ai},${ci})" title="Editar">✎</button>
                     </div>`;
@@ -1708,7 +1786,10 @@ html.dark .m-banner { color: #f4d03f; }
             .sort((a,b)=>calData.products[a].name.localeCompare(calData.products[b].name,'pt-BR',{sensitivity:'base'}));
         order.forEach(idx=>{
             const p = calData.products[idx];
-            const inUse=_productBlocked(p.name), sub=(p.formats||[]).map(f=>`${f.abbr}(${f.versions})`).join(' · ');
+            const dB=_driveBuilt(p);
+            const inUse=_productBlocked(p.name), sub=dB
+                ? '📁 ' + (p.formats||[]).map(f=>`${f.abbr}(${(dB.byFmt[f.abbr]||[]).length} na pasta)`).join(' · ')
+                : (p.formats||[]).map(f=>`${f.abbr}(${f.versions})`).join(' · ') + (p.driveFolder ? ' · 📁 aguardando leitura' : '');
             const esteiraBtn = _esteiraListBtn(p.name);
             h+=`<div class="cal-prod-list-item">
                 <div class="cal-legend-dot" style="background:${_prodColor(p.name)};width:12px;height:12px;border-radius:50%;flex-shrink:0"></div>
@@ -1728,11 +1809,13 @@ html.dark .m-banner { color: #f4d03f; }
     function _openProductForm(idx) {
         editProdIdx=idx;
         $id('cal-prodFormTitle').textContent=idx===-1?'Novo Produto':'Editar Produto';
-        if(idx===-1){ $id('cal-fpName').value=''; tempFmts=[]; $id('cal-fp-esteira-group').style.display='none'; }
+        if(idx===-1){ $id('cal-fpName').value=''; tempFmts=[]; $id('cal-fp-esteira-group').style.display='none'; $id('cal-fpDrive').value=''; $id('cal-fpDriveStatus').innerHTML=''; }
         else {
             const p=calData.products[idx]; $id('cal-fpName').value=p.name; tempFmts=(p.formats||[]).map(f=>({...f}));
             $id('cal-fp-esteira-group').style.display='';
             _updateEsteiraFormBtn(p.name);
+            $id('cal-fpDrive').value = (p.driveFolder && (p.driveFolder.url || p.driveFolder.id)) || '';
+            $id('cal-fpDriveStatus').innerHTML = _driveStatusHtml(p);
         }
         _rFmts();
         $id('cal-btn-fmtedit').style.display = idx===-1 ? 'none' : '';
@@ -1817,8 +1900,10 @@ html.dark .m-banner { color: #f4d03f; }
 
         let h='';
         (p.formats||[]).forEach(f=>{
-            h+=`<div class="cal-fmtedit-fmt-title">${_e(f.name)} (${_e(f.abbr)})</div>`;
-            for(let v=1;v<=f.versions;v++){
+            h+=`<div class="cal-fmtedit-fmt-title">${_e(f.name)} (${_e(f.abbr)})${_driveBuilt(p)?' · 📁 pasta do Drive':''}</div>`;
+            const nums = _editNums(p, f);
+            if(!nums.length) h+=`<div style="font-size:12px;color:#7b80a0;padding:4px 10px">Nenhum vídeo desse formato na pasta.</div>`;
+            for(const v of nums){
                 const key=`${f.abbr}|${v}`;
                 const net=(schedCount[key]||0)-(freed[key]||0);
                 const inSched=net>0, inHist=history.has(key);
@@ -1888,7 +1973,7 @@ html.dark .m-banner { color: #f4d03f; }
             if(it.product===name){ const k=`${it.format}|${it.version}`; schedCount[k]=(schedCount[k]||0)+1; }
         }));
         let n=0;
-        (p.formats||[]).forEach(f=>{ for(let v=1; v<=f.versions; v++){ _applyVersionUsed(name, `${f.abbr}|${v}`, makeUsed, schedCount); n++; } });
+        (p.formats||[]).forEach(f=>{ _editNums(p, f).forEach(v=>{ _applyVersionUsed(name, `${f.abbr}|${v}`, makeUsed, schedCount); n++; }); });
         _calSave();
         _rFmtEdit();
         _calToast(makeUsed ? `${n} versões bloqueadas.` : `${n} versões liberadas.`);
@@ -1936,21 +2021,38 @@ html.dark .m-banner { color: #f4d03f; }
         if(!valid){ _calToast('Preencha nome e abreviação de todos os formatos.'); return; }
         if(!fmts.length){ _calToast('Adicione pelo menos um formato.'); return; }
         if(new Set(fmts.map(f=>f.abbr)).size!==fmts.length){ _calToast('Abreviações duplicadas no mesmo produto.'); return; }
+        // Pasta do Drive (opcional): aceita o link da pasta ou o ID; vazio = desliga
+        const driveRaw=$id('cal-fpDrive').value.trim(); let driveFolder=null;
+        if(driveRaw){
+            const did=driveFolderId(driveRaw);
+            if(!did){ _calToast('Link da pasta do Drive inválido — cole o link da pasta (drive.google.com/drive/folders/...).'); return; }
+            driveFolder={ id: did, url: /^https?:\/\//i.test(driveRaw) ? driveRaw : 'https://drive.google.com/drive/folders/'+did };
+        }
         const names=calData.products.map(p=>p.name);
         if(editProdIdx===-1){
             if(names.includes(name)){ _calToast('Produto já existe.'); return; }
-            calData.products.push({name,formats:fmts,id:_genId()}); _prodColor(name);
+            const np={name,formats:fmts,id:_genId()}; if(driveFolder) np.driveFolder=driveFolder;
+            calData.products.push(np); _prodColor(name);
         } else {
             const old=calData.products[editProdIdx], oldN=old.name;
             if(oldN!==name && names.includes(name)){ _calToast('Já existe um produto com esse nome.'); return; }
             if(oldN!==name){
                 Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{ if(it.product===oldN) it.product=name; }));
                 if(calData.productColors[oldN]){ calData.productColors[name]=calData.productColors[oldN]; delete calData.productColors[oldN]; }
+                // Tudo que o Calendário guarda POR NOME acompanha a renomeação — senão o produto "esquece"
+                // as versões já usadas (e, com pasta do Drive, elas voltariam a aparecer como livres), a
+                // contagem do Teste e o status (Esteira/Pausado/Descartado).
+                ['usedHistory','freedVersions','testCounts','testStatus','discardedProducts'].forEach(k=>{
+                    const mp=calData[k];
+                    if(mp && Object.prototype.hasOwnProperty.call(mp,oldN)){ mp[name]=mp[oldN]; delete mp[oldN]; }
+                });
+                (calData.postHistory||[]).forEach(ev=>{ if(old.id && ev.productId===old.id) ev.productName=name; });
             }
             (old.formats||[]).forEach((of,fi)=>{ const nf=fmts[fi]; if(nf&&nf.abbr!==of.abbr) Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{ if(it.product===name&&it.format===of.abbr) it.format=nf.abbr; })); });
             // Mantém o mesmo id ao renomear — o Histórico usa productId pra relacionar,
             // então o produto renomeado continua ligado às suas postagens antigas.
-            calData.products[editProdIdx]={name,formats:fmts,id:old.id||_genId()};
+            const up={name,formats:fmts,id:old.id||_genId()}; if(driveFolder) up.driveFolder=driveFolder;
+            calData.products[editProdIdx]=up;
         }
         _calSave(); _closeProductForm(); _calRender();
         _calToast(editProdIdx===-1?'Produto adicionado!':'Produto salvo!');
@@ -2087,6 +2189,7 @@ html.dark .m-banner { color: #f4d03f; }
                     <span class="cal-chip-badge" style="background:${bg}">${_e(it.format)}</span>
                     <span class="cal-chip-color" style="background:${col}"></span>
                     <span class="m-chip-name">${_e(it.product)} ${_e(it.format)}${_e(it.version)}</span>
+                    ${_driveLink(it)}
                 </div>
                 ${sub.length ? `<div class="m-chip-sub">${sub.join('')}</div>` : ''}
             </div>
@@ -2183,6 +2286,15 @@ html.dark .m-banner { color: #f4d03f; }
     window.cal_toggleRowMenu      = _toggleRowMenu;
     window.cal_toggleEsteira      = _toggleEsteira;
     window.cal_clearList          = _clearList;
+    // índice de arquivos da pasta do Drive (vem do Firebase — ver DRIVEIDX / drive/Code.gs)
+    window.cal_setDriveIndex      = (idx) => {
+        driveIndex = idx || {};
+        try { localStorage.setItem('calendario-drive-index', JSON.stringify(driveIndex)); } catch(e) { /* sem espaço: segue só em memória */ }
+        _calRender();
+        const st = $id('cal-fpDriveStatus');
+        if (st && editProdIdx !== -1 && calData.products[editProdIdx]) st.innerHTML = _driveStatusHtml(calData.products[editProdIdx]);
+        if (typeof _rProdList === 'function' && $id('cal-productsOverlay') && $id('cal-productsOverlay').classList.contains('open') && $id('cal-prodListView').style.display !== 'none') _rProdList();
+    };
     window.cal_openManageProducts = _openManageProducts;
     window.cal_closeProdModal     = _closeProdModal;
     window.cal_openProductForm    = _openProductForm;
@@ -2319,6 +2431,59 @@ function planStartup(s) {
     return { action: 'adopt', backup: !s.bound ? 'prebind' : (s.dirty ? 'conflict' : null) };
 }
 
+function driveNorm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+// Qual formato do produto uma "palavra" representa: sigla (F), nome inteiro (Fábrica) ou
+// prefixo ÚNICO do nome (Fab). Sem ambiguidade — se casar com mais de um, não casa.
+function driveMatchFormat(tok, formats) {
+    const fs = formats || [];
+    let f = fs.find(x => driveNorm(x.abbr) === tok);
+    if (f) return f;
+    f = fs.find(x => driveNorm(x.name) === tok);
+    if (f) return f;
+    if (tok.length >= 2) {
+        const c = fs.filter(x => driveNorm(x.name).startsWith(tok));
+        if (c.length === 1) return c[0];
+    }
+    return null;
+}
+// "Pente F1 final.mp4" -> { fmt: 'F', n: 1 } (fmt = sigla do formato) ou null se não achar sigla/nome + número
+function driveParseName(fileName, formats) {
+    const base = String(fileName || '').replace(/\.[A-Za-z0-9]{2,5}$/, '');
+    const re = /([A-Za-zÀ-ÿ]+)[\s._-]*(\d+)/g;
+    let m;
+    while ((m = re.exec(base))) {
+        const n = parseInt(m[2], 10);
+        if (!(n >= 1)) continue;
+        const f = driveMatchFormat(driveNorm(m[1]), formats);
+        if (f) return { fmt: f.abbr, n };
+    }
+    return null;
+}
+// Lista de arquivos do índice -> versões existentes por formato.
+// map: 'F|3' -> arquivo (pra abrir o vídeo); byFmt: { F: [1,2,3] }; não reconhecidos/duplicados só são contados.
+function driveBuildVersions(files, formats) {
+    const byFmt = {}, map = {}, unrecognized = [], duplicates = [];
+    (formats || []).forEach(f => { byFmt[f.abbr] = []; });
+    // nome mais curto primeiro: se houver "F1.mp4" e "F1 copia.mp4", o original é o que fica
+    (files || []).slice()
+        .sort((a, b) => (String(a.name).length - String(b.name).length) || String(a.name).localeCompare(String(b.name), 'pt-BR', { numeric: true }))
+        .forEach(fl => {
+            const p = driveParseName(fl.name, formats);
+            if (!p) { unrecognized.push(fl.name); return; }
+            const key = p.fmt + '|' + p.n;
+            if (map[key]) { duplicates.push(fl.name); return; }
+            map[key] = fl; byFmt[p.fmt].push(p.n);
+        });
+    Object.keys(byFmt).forEach(k => byFmt[k].sort((a, b) => a - b));
+    return { byFmt, map, total: (files || []).length, recognized: Object.keys(map).length, unrecognized, duplicates };
+}
+// Extrai o ID de uma pasta a partir do link do Drive (ou do próprio ID colado).
+function driveFolderId(s) {
+    s = String(s || '').trim();
+    const m = s.match(/\/folders\/([A-Za-z0-9_-]{10,})/) || s.match(/[?&]id=([A-Za-z0-9_-]{10,})/) || s.match(/^([A-Za-z0-9_-]{20,})$/);
+    return m ? m[1] : null;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // MOBILE — pareamento com o Firebase do Hub + ligação do createCalSync.
 // Mesmo nó que o Hub usa: hub/<perfil>/calendario (concorrência por _rev).
@@ -2335,7 +2500,7 @@ function planStartup(s) {
     };
     const syncStore = { get: k => ls.get('mcal-sync-' + k), set: (k, v) => ls.set('mcal-sync-' + k, v) };
 
-    let sync = null, status = 'local', statusMsg = '', booting = false, retryTimer = null, activeProfile = '', activeHost = '';
+    let sync = null, status = 'local', statusMsg = '', booting = false, retryTimer = null, activeProfile = '', activeHost = '', stopDriveListen = null;
     const toast = m => { if (window.mcal_toast) window.mcal_toast(m); };
     const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
     const modalOpen = () => !!document.querySelector('.cal-overlay.open, .cal-hist-backdrop.open');
@@ -2435,6 +2600,11 @@ function planStartup(s) {
         const remote = await withTimeout(transport.get(), 15000, 'A nuvem não respondeu.');
         activeProfile = profile; activeHost = (cfg.databaseURL || '').replace(/^https?:\/\//, '');
         reconcile(transport, remote, cfg, profile);
+        // Índice de arquivos das pastas do Drive (gravado pelo Apps Script; aqui só leitura, ao vivo)
+        if (stopDriveListen) { try { stopDriveListen(); } catch (e) { /* ok */ } }
+        stopDriveListen = F.onValue(F.ref(db, root + '/driveIndex'),
+            s => { if (window.cal_setDriveIndex) window.cal_setDriveIndex(s.val()); },
+            () => { /* sem leitura do índice: segue com a contagem numérica de versões */ });
         return { empty: !remote };
     }
 
