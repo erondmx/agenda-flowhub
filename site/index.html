@@ -205,6 +205,7 @@ try { if (localStorage.getItem('mcal-theme') !== 'light') document.documentEleme
         html.dark .cal-fmtedit-badge.free { background: rgba(255,255,255,.06); }
         .cal-drive-status { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.4; }
         .cal-drive-status:empty { display: none; }
+        .cal-drive-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
         .cal-drive-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.45; opacity: .85; }
         .cal-chip-open { flex-shrink: 0; text-decoration: none; color: var(--accent); font-weight: 800; font-size: 15px; padding: 0 4px; line-height: 1; }
         .cal-chip-open:hover { color: var(--green); }
@@ -675,6 +676,10 @@ html.dark .m-banner { color: #f4d03f; }
                         <label>Pasta do Google Drive (opcional)</label>
                         <input type="text" class="cal-inp" id="cal-fpDrive" placeholder="Cole o link da pasta com os vídeos deste produto" autocomplete="off" autocapitalize="off" spellcheck="false">
                         <div id="cal-fpDriveStatus" class="cal-drive-status"></div>
+                        <div class="cal-drive-actions">
+                            <button type="button" class="cal-btn cal-btn-sm" onclick="cal_driveReadNow()" title="Manda o Apps Script ler a pasta agora, sem esperar os 10 minutos">🔄 Ler pasta agora</button>
+                            <button type="button" class="cal-btn cal-btn-sm" onclick="cal_driveSetRunUrl()" title="Link gerado pelo Apps Script (função linkLeituraImediata)">⚡ Link de leitura imediata</button>
+                        </div>
                         <div class="cal-drive-hint">Com a pasta ligada, as versões são os arquivos que estão nela (F1, L3, "Fábrica 2"...). Apagou o vídeo depois de postar? Ele sai da fila. Sem pasta, vale o número de versões abaixo.</div>
                     </div>
                     <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
@@ -2029,12 +2034,14 @@ html.dark .m-banner { color: #f4d03f; }
             driveFolder={ id: did, url: /^https?:\/\//i.test(driveRaw) ? driveRaw : 'https://drive.google.com/drive/folders/'+did };
         }
         const names=calData.products.map(p=>p.name);
+        let prevDriveId=null;
         if(editProdIdx===-1){
             if(names.includes(name)){ _calToast('Produto já existe.'); return; }
             const np={name,formats:fmts,id:_genId()}; if(driveFolder) np.driveFolder=driveFolder;
             calData.products.push(np); _prodColor(name);
         } else {
             const old=calData.products[editProdIdx], oldN=old.name;
+            prevDriveId=(old.driveFolder&&old.driveFolder.id)||null;
             if(oldN!==name && names.includes(name)){ _calToast('Já existe um produto com esse nome.'); return; }
             if(oldN!==name){
                 Object.values(calData.schedule).forEach(arr=>arr.forEach(it=>{ if(it.product===oldN) it.product=name; }));
@@ -2056,6 +2063,39 @@ html.dark .m-banner { color: #f4d03f; }
         }
         _calSave(); _closeProductForm(); _calRender();
         _calToast(editProdIdx===-1?'Produto adicionado!':'Produto salvo!');
+        // pasta nova ou trocada: pede a leitura na hora (se o link de leitura imediata estiver configurado)
+        if(driveFolder && driveFolder.id!==prevDriveId) _driveReadNow(true);
+    }
+
+    // ── LEITURA IMEDIATA DA PASTA (Apps Script publicado como App da Web — ver drive/Code.gs) ──
+    let _driveReading=false;
+    function _driveRunUrlOk(u) { return /^https:\/\/script\.google(usercontent)?\.com\/\S*\/exec\?\S*k=\w+/.test(u); }
+    function _driveSetRunUrl() {
+        const v=prompt('Cole aqui o link de leitura imediata gerado pelo Apps Script (função linkLeituraImediata).\nDeixe vazio para desligar.', calData.driveRunUrl||'');
+        if(v===null) return;
+        const t=v.trim();
+        if(t && !_driveRunUrlOk(t)){ _calToast('Link inválido: tem que terminar em /exec?k=… (rode linkLeituraImediata no Apps Script).'); return; }
+        if(t) calData.driveRunUrl=t; else delete calData.driveRunUrl;
+        _calSave();
+        _calToast(t?'Link de leitura imediata salvo (vale pra todos os aparelhos).':'Leitura imediata desligada.');
+    }
+    async function _driveReadNow(auto) {
+        const url=calData.driveRunUrl;
+        if(!url){ if(!auto) _calToast('Falta o link de leitura imediata (botão ⚡). Sem ele a leitura roda a cada ~10 min.'); return; }
+        if(!auto){   // botão manual: a pasta digitada tem que já estar salva no produto (o script lê o que está na nuvem)
+            const p=editProdIdx!==-1?calData.products[editProdIdx]:null, did=driveFolderId($id('cal-fpDrive').value);
+            if(!p || !did || !p.driveFolder || p.driveFolder.id!==did){ _calToast('Salve o produto primeiro, depois peça a leitura.'); return; }
+        }
+        if(_driveReading) return;
+        _driveReading=true;
+        try {
+            _calToast('Lendo a pasta no Drive…');
+            if(typeof _calSyncFlush==='function'){ await _calSyncFlush(); await new Promise(r=>setTimeout(r,900)); }   // o script lê o que já está na nuvem
+            await fetch(url+(url.indexOf('?')>=0?'&':'?')+'t='+Date.now(), { mode:'no-cors', cache:'no-store' });
+            _calToast('Pasta lida — as versões atualizam em instantes.');
+        } catch(e) {
+            _calToast('Não consegui chamar o Apps Script (sem internet?). A leitura automática roda em até 10 min.');
+        } finally { _driveReading=false; }
     }
 
     // ── CONTAS ──
@@ -2295,6 +2335,8 @@ html.dark .m-banner { color: #f4d03f; }
         if (st && editProdIdx !== -1 && calData.products[editProdIdx]) st.innerHTML = _driveStatusHtml(calData.products[editProdIdx]);
         if (typeof _rProdList === 'function' && $id('cal-productsOverlay') && $id('cal-productsOverlay').classList.contains('open') && $id('cal-prodListView').style.display !== 'none') _rProdList();
     };
+    window.cal_driveReadNow       = () => _driveReadNow(false);
+    window.cal_driveSetRunUrl     = _driveSetRunUrl;
     window.cal_openManageProducts = _openManageProducts;
     window.cal_closeProdModal     = _closeProdModal;
     window.cal_openProductForm    = _openProductForm;
@@ -2533,6 +2575,8 @@ function driveFolderId(s) {
         if (sync) sync.notifyLocalChange();
         else if (ls.get(K.mode) === 'cloud') setStatus('offline', 'edição guardada; envia quando conectar');
     };
+    // usado pelo "Ler pasta agora": o script do Drive lê o calendário da nuvem, então sobe antes
+    window._calSyncFlush = function () { return sync ? sync.flush() : Promise.resolve(); };
     function applyRemote(remote) {
         cal_setData(remote);
         saveLocal(cal_getData());
